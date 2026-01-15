@@ -164,14 +164,16 @@ function generateTransformProps(
 /**
  * Superset dependencies passed to makeChartPlugin.
  * These come from @superset-ui/core in Superset.
+ *
+ * Note: We use `any` for constructor args because Superset's ChartPlugin
+ * has complex generics that can't be easily expressed without importing
+ * Superset's types directly.
  */
 export interface SupersetDeps {
-    ChartPlugin: new (config: {
-        metadata: unknown;
-        loadChart: () => Promise<{ default: React.FC<unknown> }>;
-        controlPanel: ControlPanelConfig;
-        transformProps: (props: SupersetChartProps) => unknown;
-    }) => unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ChartPlugin: abstract new (...args: any[]) => {
+        configure(options: { key: string }): unknown;
+    };
     ChartMetadata: new (config: {
         name: string;
         description?: string;
