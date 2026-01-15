@@ -37,7 +37,7 @@ function renderBigNumber(dataFrame: Table, metric: Metric): React.ReactNode {
 
 // This is it! The entire chart definition:
 export const BigNumber = createChart(
-    'Big Number',
+    'Glyph Big Number',
     renderBigNumber,
     { description: 'Display a big number with a label' }
 );

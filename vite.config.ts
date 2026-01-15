@@ -5,6 +5,9 @@ import { vitePluginTypescriptTransform } from 'vite-plugin-typescript-transform'
 
 // https://vite.dev/config/
 export default defineConfig({
+    define: {
+        'process': JSON.stringify({ env: {} })
+    },
     plugins: [
         // TypeScript transform plugin to run RTTI transformer
         vitePluginTypescriptTransform({
