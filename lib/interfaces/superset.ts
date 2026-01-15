@@ -1,7 +1,7 @@
 import "reflect-metadata";
-import { reflect, ReflectedClassRef, ReflectedInterfaceRef, ReflectedObjectRef } from 'typescript-rtti';
-import { Table, tableFromArrays } from 'apache-arrow';
-import { Argument, Metric, Dimension, ColumnType, ChartProps } from '../types';
+import { tableFromArrays } from 'apache-arrow';
+import { Argument, ColumnType } from '../types';
+import { GlyphChart as CreateChartGlyphChart } from '../createChart';
 
 /**
  * Superset type interfaces (compatible with @superset-ui/core)
@@ -31,7 +31,7 @@ export interface ControlPanelConfig {
 }
 
 /**
- * Glyph chart metadata.
+ * Glyph chart metadata (legacy format).
  */
 export interface GlyphChartMetadata {
     name: string;
@@ -43,11 +43,14 @@ export interface GlyphChartMetadata {
 }
 
 /**
- * A Glyph chart component with metadata.
+ * A Glyph chart component - supports both createChart and legacy formats.
  */
-export type GlyphChart<P extends ChartProps = ChartProps> = React.FC<P> & {
-    metadata?: GlyphChartMetadata;
-};
+export type GlyphChart =
+    | CreateChartGlyphChart  // New format from createChart()
+    | (React.FC<unknown> & {
+        metadata?: GlyphChartMetadata;
+        chartArguments?: Map<string, typeof Argument>;
+    });
 
 /**
  * Mapping from Glyph ColumnType to Superset control type.
@@ -60,90 +63,30 @@ const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
 
 function getControlForArgument(argClass: typeof Argument): string {
     const types = argClass.types || [ColumnType.Argument];
-    return COLUMN_TYPE_TO_CONTROL[types[0]] || 'TextControl';
+    const firstType = types[0];
+    return firstType ? COLUMN_TYPE_TO_CONTROL[firstType] || 'TextControl' : 'TextControl';
 }
 
 /**
- * Extract chart arguments using reflection on the props type.
- *
- * This introspects the React component's props interface to find
- * properties that are Argument subclasses (Metric, Dimension, etc.)
+ * Extract chart arguments from a Glyph chart.
+ * Supports both createChart format (chartArguments) and legacy format (metadata.arguments).
  */
 export function getChartArguments(chart: GlyphChart): Map<string, typeof Argument> {
-    const args = new Map<string, typeof Argument>();
-
-    // First check explicit metadata (fallback)
-    if (chart.metadata?.arguments) {
-        for (const [name, argClass] of Object.entries(chart.metadata.arguments)) {
-            args.set(name, argClass);
-        }
-        return args;
+    // Check for createChart format first (has chartArguments from reflection)
+    if ('chartArguments' in chart && chart.chartArguments instanceof Map) {
+        console.log('[getChartArguments] Using chartArguments from createChart');
+        return chart.chartArguments;
     }
 
-    // Use reflection to introspect the props type
-    try {
-        const reflected = reflect(chart);
+    // Fall back to legacy metadata format
+    const args = new Map<string, typeof Argument>();
+    const legacyChart = chart as React.FC<unknown> & { metadata?: GlyphChartMetadata };
 
-        // Debug: log what we're seeing
-        console.log('[Reflection] Parameter names:', reflected.parameterNames);
-
-        // React components have one parameter: the props object
-        // Get the type of that parameter
-        const propsParam = reflected.getParameter(reflected.parameterNames[0]);
-        if (!propsParam) {
-            console.log('[Reflection] No props parameter found');
-            return args;
+    if (legacyChart.metadata?.arguments) {
+        console.log('[getChartArguments] Using legacy metadata.arguments');
+        for (const [name, argClass] of Object.entries(legacyChart.metadata.arguments)) {
+            args.set(name, argClass);
         }
-
-        const propsType = propsParam.type;
-        console.log('[Reflection] Props type kind:', propsType.kind);
-        console.log('[Reflection] Props type:', propsType);
-
-        // Get property names from the props type
-        // The type could be an interface, object literal, or intersection
-        let propertyNames: string[] = [];
-
-        if (propsType.is('interface')) {
-            const iface = propsType as ReflectedInterfaceRef;
-            propertyNames = iface.reflectedInterface?.propertyNames || [];
-
-            for (const propName of propertyNames) {
-                if (propName === 'dataFrame') continue;
-
-                const prop = iface.reflectedInterface?.getProperty(propName);
-                const propType = prop?.type;
-
-                // Check if property type is a class that extends Argument
-                if (propType?.is('class')) {
-                    const classRef = propType as ReflectedClassRef<unknown>;
-                    const cls = classRef.reflectedClass?.class;
-                    if (cls && (cls === Argument || cls.prototype instanceof Argument)) {
-                        args.set(propName, cls as typeof Argument);
-                    }
-                }
-            }
-        } else if (propsType.is('object')) {
-            // Object literal type
-            const objType = propsType as ReflectedObjectRef;
-            propertyNames = objType.propertyNames || [];
-
-            for (const propName of propertyNames) {
-                if (propName === 'dataFrame') continue;
-
-                const prop = objType.getProperty(propName);
-                const propType = prop?.type;
-
-                if (propType?.is('class')) {
-                    const classRef = propType as ReflectedClassRef<unknown>;
-                    const cls = classRef.reflectedClass?.class;
-                    if (cls && (cls === Argument || cls.prototype instanceof Argument)) {
-                        args.set(propName, cls as typeof Argument);
-                    }
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('Reflection failed, using metadata fallback:', e);
     }
 
     return args;
@@ -177,19 +120,20 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
 /**
  * Generate transformProps function for a Glyph chart.
  */
-function generateTransformProps<P extends ChartProps>(
-    chart: GlyphChart<P>
-): (chartProps: SupersetChartProps) => P {
+function generateTransformProps(
+    chart: GlyphChart
+): (chartProps: SupersetChartProps) => Record<string, unknown> {
     const args = getChartArguments(chart);
 
-    return (chartProps: SupersetChartProps): P => {
+    return (chartProps: SupersetChartProps) => {
         const { formData, queriesData } = chartProps;
         const data = queriesData[0]?.data || [];
 
         // Convert to Apache Arrow Table
         const columns: Record<string, unknown[]> = {};
-        if (data.length > 0) {
-            for (const key of Object.keys(data[0])) {
+        const firstRow = data[0];
+        if (firstRow) {
+            for (const key of Object.keys(firstRow)) {
                 columns[key] = data.map(row => row[key]);
             }
         }
@@ -213,7 +157,7 @@ function generateTransformProps<P extends ChartProps>(
             }
         }
 
-        return props as P;
+        return props;
     };
 }
 
@@ -243,26 +187,49 @@ export interface PluginOptions {
 }
 
 /**
+ * Get chart metadata from either createChart or legacy format.
+ */
+function getChartMetadata(chart: GlyphChart): { name: string; description: string; category?: string; tags?: string[] } {
+    // createChart format
+    if ('metadata' in chart && chart.metadata && 'name' in chart.metadata) {
+        return {
+            name: chart.metadata.name,
+            description: chart.metadata.description || '',
+            category: chart.metadata.category,
+            tags: chart.metadata.tags,
+        };
+    }
+
+    // Legacy format or function name fallback
+    const legacyChart = chart as React.FC<unknown> & { metadata?: GlyphChartMetadata };
+    if (legacyChart.metadata) {
+        return legacyChart.metadata;
+    }
+
+    return { name: chart.name || 'Chart', description: '' };
+}
+
+/**
  * Create a Superset ChartPlugin class from a Glyph chart.
  *
  * Usage in Superset:
  * ```typescript
  * import { ChartPlugin, ChartMetadata } from '@superset-ui/core';
- * import { BigNumber, makeChartPlugin } from 'glyph';
+ * import { BigNumberPure, makeChartPlugin } from 'glyph';
  * import thumbnail from './thumbnail.png';
  *
- * export default makeChartPlugin(BigNumber, { ChartPlugin, ChartMetadata }, { thumbnail });
+ * export default makeChartPlugin(BigNumberPure, { ChartPlugin, ChartMetadata }, { thumbnail });
  * ```
  */
-export function makeChartPlugin<P extends ChartProps>(
-    chart: GlyphChart<P>,
+export function makeChartPlugin(
+    chart: GlyphChart,
     deps: SupersetDeps,
     options: PluginOptions
 ) {
-    const { ChartPlugin, ChartMetadata } = deps;
-    const meta = chart.metadata || { name: chart.name || 'Chart', description: '' };
+    const { ChartPlugin, ChartMetadata: SupersetChartMetadata } = deps;
+    const meta = getChartMetadata(chart);
 
-    const metadata = new ChartMetadata({
+    const metadata = new SupersetChartMetadata({
         name: meta.name,
         description: meta.description,
         category: meta.category || 'Glyph',
@@ -273,11 +240,14 @@ export function makeChartPlugin<P extends ChartProps>(
     const controlPanel = generateControlPanel(chart);
     const transformProps = generateTransformProps(chart);
 
-    return class GlyphChartPlugin extends (ChartPlugin as new (...args: unknown[]) => unknown) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const BasePlugin = ChartPlugin as new (config: any) => any;
+
+    return class GlyphChartPlugin extends BasePlugin {
         constructor() {
             super({
                 metadata,
-                loadChart: () => Promise.resolve({ default: chart }),
+                loadChart: () => Promise.resolve({ default: chart as React.FC<unknown> }),
                 controlPanel,
                 transformProps,
             });
@@ -288,8 +258,8 @@ export function makeChartPlugin<P extends ChartProps>(
 // Legacy exports for backward compatibility
 export { generateControlPanel, generateTransformProps };
 
-export function createSupersetPlugin<P extends ChartProps>(chart: GlyphChart<P>) {
-    const meta = chart.metadata || { name: chart.name || 'Chart', description: '' };
+export function createSupersetPlugin(chart: GlyphChart) {
+    const meta = getChartMetadata(chart);
 
     return {
         metadata: {

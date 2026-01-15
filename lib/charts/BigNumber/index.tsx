@@ -1,45 +1,43 @@
-import { StructRow } from 'apache-arrow';
-import { ChartProps, Metric } from '../../types';
+import { Table, StructRow } from 'apache-arrow';
+import { Metric } from '../../types';
+import { createChart } from '../../createChart';
 
-interface BigNumberProps extends ChartProps {
-    metric: Metric;
-    /*
-     * When new attributes are added, they MUST have a default value,
-     * so that saved charts continue to work with the old payload.
-     */
+/**
+ * BigNumber using pure reflection - the simplest possible API!
+ *
+ * Just write a function with semantic arguments.
+ * No interfaces, no metadata, no duplication.
+ */
+
+interface DataRow extends StructRow {
+    [key: string]: unknown;
 }
 
-interface BigNumberRow extends StructRow {
-    source: string;
-    [key: string]: unknown;  // dynamic metric name
-}
-
-function renderData(value: unknown): string | number {
+function renderValue(value: unknown): string | number {
     if (typeof value === 'number' || typeof value === 'string') return value;
-    return 'Unexpected data';
+    return 'N/A';
 }
 
-export function BigNumber({ metric, dataFrame }: BigNumberProps) {
+// Define the render function as a regular function (not arrow)
+// This works better with reflection
+function renderBigNumber(dataFrame: Table, metric: Metric): React.ReactNode {
     const metricColumn = metric.value;
-    const values = dataFrame.toArray() as BigNumberRow[];
+    const values = dataFrame.toArray() as DataRow[];
 
     return (
         <div>
-            {values.map((row: BigNumberRow) => (
-                <>
-                    <h1>{renderData(row[metricColumn])}</h1>
-                    <h2>{row.source}</h2>
-                </>
+            {values.map((row, i) => (
+                <div key={i}>
+                    <h1>{renderValue(row[metricColumn])}</h1>
+                </div>
             ))}
         </div>
     );
 }
 
-BigNumber.metadata = {
-    name: 'Big Number',
-    description: 'Display a big number with a label',
-    author: {name: 'Beto Dealmeida', email: 'contact@robida.net'},
-    arguments: {
-        metric: Metric,
-    },
-};
+// This is it! The entire chart definition:
+export const BigNumber = createChart(
+    'Big Number',
+    renderBigNumber,
+    { description: 'Display a big number with a label' }
+);
