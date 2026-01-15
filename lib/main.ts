@@ -20,8 +20,17 @@ export type {
     PluginOptions,
 } from './interfaces/superset';
 
+// Re-export chart definition helpers
+export { defineChart } from './defineChart';
+export type { ChartDefinition, ChartOptions } from './defineChart';
+export { createChart } from './createChart';
+export type { GlyphChart, ChartMetadata } from './createChart';
+
 // Re-export charts
 export { BigNumber } from './charts/BigNumber';
+export { BigNumber as BigNumberSchema } from './charts/BigNumber/schema';
+export { BigNumberReflected } from './charts/BigNumber/reflected';
+export { BigNumberPure } from './charts/BigNumber/pure';
 
 export function getArguments(chart: React.FC<unknown>): Record<string, unknown[]> {
     /*

@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { reflect, ReflectedClassRef } from 'typescript-rtti';
+import { reflect, ReflectedClassRef, ReflectedInterfaceRef, ReflectedObjectRef } from 'typescript-rtti';
 import { Table, tableFromArrays } from 'apache-arrow';
 import { Argument, Metric, Dimension, ColumnType, ChartProps } from '../types';
 
@@ -64,15 +64,86 @@ function getControlForArgument(argClass: typeof Argument): string {
 }
 
 /**
- * Extract chart arguments from metadata.
+ * Extract chart arguments using reflection on the props type.
+ *
+ * This introspects the React component's props interface to find
+ * properties that are Argument subclasses (Metric, Dimension, etc.)
  */
 export function getChartArguments(chart: GlyphChart): Map<string, typeof Argument> {
     const args = new Map<string, typeof Argument>();
 
+    // First check explicit metadata (fallback)
     if (chart.metadata?.arguments) {
         for (const [name, argClass] of Object.entries(chart.metadata.arguments)) {
             args.set(name, argClass);
         }
+        return args;
+    }
+
+    // Use reflection to introspect the props type
+    try {
+        const reflected = reflect(chart);
+
+        // Debug: log what we're seeing
+        console.log('[Reflection] Parameter names:', reflected.parameterNames);
+
+        // React components have one parameter: the props object
+        // Get the type of that parameter
+        const propsParam = reflected.getParameter(reflected.parameterNames[0]);
+        if (!propsParam) {
+            console.log('[Reflection] No props parameter found');
+            return args;
+        }
+
+        const propsType = propsParam.type;
+        console.log('[Reflection] Props type kind:', propsType.kind);
+        console.log('[Reflection] Props type:', propsType);
+
+        // Get property names from the props type
+        // The type could be an interface, object literal, or intersection
+        let propertyNames: string[] = [];
+
+        if (propsType.is('interface')) {
+            const iface = propsType as ReflectedInterfaceRef;
+            propertyNames = iface.reflectedInterface?.propertyNames || [];
+
+            for (const propName of propertyNames) {
+                if (propName === 'dataFrame') continue;
+
+                const prop = iface.reflectedInterface?.getProperty(propName);
+                const propType = prop?.type;
+
+                // Check if property type is a class that extends Argument
+                if (propType?.is('class')) {
+                    const classRef = propType as ReflectedClassRef<unknown>;
+                    const cls = classRef.reflectedClass?.class;
+                    if (cls && (cls === Argument || cls.prototype instanceof Argument)) {
+                        args.set(propName, cls as typeof Argument);
+                    }
+                }
+            }
+        } else if (propsType.is('object')) {
+            // Object literal type
+            const objType = propsType as ReflectedObjectRef;
+            propertyNames = objType.propertyNames || [];
+
+            for (const propName of propertyNames) {
+                if (propName === 'dataFrame') continue;
+
+                const prop = objType.getProperty(propName);
+                const propType = prop?.type;
+
+                if (propType?.is('class')) {
+                    const classRef = propType as ReflectedClassRef<unknown>;
+                    const cls = classRef.reflectedClass?.class;
+                    if (cls && (cls === Argument || cls.prototype instanceof Argument)) {
+                        args.set(propName, cls as typeof Argument);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Reflection failed, using metadata fallback:', e);
     }
 
     return args;

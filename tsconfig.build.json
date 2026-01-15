@@ -126,5 +126,5 @@
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
     "plugins": [{ "transform": "typescript-rtti/dist/transformer" }]
     },
-    "include": ["lib"]
+    "include": ["lib", "src"]
 }

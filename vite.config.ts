@@ -1,10 +1,25 @@
 import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import { vitePluginTypescriptTransform } from 'vite-plugin-typescript-transform'
 
 // https://vite.dev/config/
 export default defineConfig({
-    plugins: [react()],
+    plugins: [
+        // TypeScript transform plugin to run RTTI transformer
+        vitePluginTypescriptTransform({
+            enforce: 'pre',
+            filter: {
+                files: {
+                    include: ['**/*.ts', '**/*.tsx'],
+                },
+            },
+            tsconfig: {
+                location: resolve(__dirname, 'tsconfig.build.json'),
+            },
+        }),
+        react(),
+    ],
     build: {
         emptyOutDir: false,
         copyPublicDir: false,
