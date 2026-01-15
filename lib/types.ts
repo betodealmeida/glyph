@@ -29,10 +29,14 @@ export class Argument {
 
 export class Metric extends Argument {
     static override types: ColumnType[] = [ColumnType.Metric];
+    static override label = 'Metric';
+    static override description = 'A numeric aggregation (SUM, COUNT, AVG, etc.)';
 }
 
 export class Dimension extends Argument {
     static override types: ColumnType[] = [ColumnType.Dimension];
+    static override label = 'Dimension';
+    static override description = 'A categorical column for grouping data';
 }
 
 // XXX add types for Palette, PaletteMap, Font, etc. to be used as props in chart components

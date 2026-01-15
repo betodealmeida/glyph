@@ -39,4 +39,7 @@ BigNumber.metadata = {
     name: 'Big Number',
     description: 'Display a big number with a label',
     author: {name: 'Beto Dealmeida', email: 'contact@robida.net'},
+    arguments: {
+        metric: Metric,
+    },
 };

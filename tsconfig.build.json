@@ -1,6 +1,6 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
     // -------------------
     // Section 1: Projects
     // -------------------
@@ -122,8 +122,9 @@
     // -----------------------
     // Section 8: Completeness
     // -----------------------
-    "skipLibCheck": true // Skip type checking all .d.ts files.
+    "skipLibCheck": true, // Skip type checking all .d.ts files.
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
-  },
-  "include": ["lib"]
+    "plugins": [{ "transform": "typescript-rtti/dist/transformer" }]
+    },
+    "include": ["lib"]
 }
