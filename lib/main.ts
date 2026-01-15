@@ -8,9 +8,7 @@ export { Argument, Metric, Dimension, ColumnType } from './types';
 // Re-export Superset adapter
 export {
     createSupersetPlugin,
-    generateControlPanel,
-    generateTransformProps,
-    generateBuildQuery,
+    makeChartPlugin,
     getChartArguments,
 } from './interfaces/superset';
 export type {
@@ -18,6 +16,8 @@ export type {
     GlyphChartMetadata,
     SupersetChartProps,
     ControlPanelConfig,
+    SupersetDeps,
+    PluginOptions,
 } from './interfaces/superset';
 
 // Re-export charts

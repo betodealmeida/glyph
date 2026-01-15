@@ -4,8 +4,7 @@ import { Table, tableFromArrays } from 'apache-arrow';
 import { Argument, Metric, Dimension, ColumnType, ChartProps } from '../types';
 
 /**
- * Superset plugin interfaces (simplified from @superset-ui/core)
- * These match Superset's expected types for chart plugins.
+ * Superset type interfaces (compatible with @superset-ui/core)
  */
 
 export interface QueryFormData {
@@ -16,63 +15,29 @@ export interface QueryFormData {
     columns?: string[];
 }
 
-export interface ChartDataResponseResult {
-    data: Record<string, unknown>[];
-}
-
 export interface SupersetChartProps {
     width: number;
     height: number;
     formData: QueryFormData;
-    queriesData: ChartDataResponseResult[];
-}
-
-export interface ControlConfig {
-    name: string;
-    config: {
-        type: string;
-        label: string;
-        description?: string;
-        default?: unknown;
-        renderTrigger?: boolean;
-        [key: string]: unknown;
-    };
-}
-
-export interface ControlPanelSection {
-    label: string;
-    expanded: boolean;
-    controlSetRows: (string | ControlConfig)[][];
+    queriesData: { data: Record<string, unknown>[] }[];
 }
 
 export interface ControlPanelConfig {
-    controlPanelSections: ControlPanelSection[];
+    controlPanelSections: {
+        label: string;
+        expanded: boolean;
+        controlSetRows: (string | { name: string; config: Record<string, unknown> })[][];
+    }[];
 }
 
 /**
- * Mapping from Glyph ColumnType to Superset control type.
- */
-const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
-    [ColumnType.Metric]: 'metric',
-    [ColumnType.Dimension]: 'groupby',
-    [ColumnType.Argument]: 'TextControl',
-};
-
-/**
- * Get the Superset control name for a given Argument class.
- */
-function getControlForArgument(argClass: typeof Argument): string {
-    const types = argClass.types || [ColumnType.Argument];
-    // Use the first type to determine the control
-    return COLUMN_TYPE_TO_CONTROL[types[0]] || 'TextControl';
-}
-
-/**
- * Metadata attached to Glyph chart components.
+ * Glyph chart metadata.
  */
 export interface GlyphChartMetadata {
     name: string;
     description: string;
+    category?: string;
+    tags?: string[];
     author?: { name: string; email: string };
     arguments?: Record<string, typeof Argument>;
 }
@@ -85,34 +50,28 @@ export type GlyphChart<P extends ChartProps = ChartProps> = React.FC<P> & {
 };
 
 /**
- * Extract chart arguments from metadata or via reflection.
- * Returns a map of parameter name -> argument class.
+ * Mapping from Glyph ColumnType to Superset control type.
  */
-export function getChartArguments(
-    chart: GlyphChart
-): Map<string, typeof Argument> {
+const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
+    [ColumnType.Metric]: 'metric',
+    [ColumnType.Dimension]: 'groupby',
+    [ColumnType.Argument]: 'TextControl',
+};
+
+function getControlForArgument(argClass: typeof Argument): string {
+    const types = argClass.types || [ColumnType.Argument];
+    return COLUMN_TYPE_TO_CONTROL[types[0]] || 'TextControl';
+}
+
+/**
+ * Extract chart arguments from metadata.
+ */
+export function getChartArguments(chart: GlyphChart): Map<string, typeof Argument> {
     const args = new Map<string, typeof Argument>();
 
-    // Prefer explicit metadata.arguments declaration
     if (chart.metadata?.arguments) {
         for (const [name, argClass] of Object.entries(chart.metadata.arguments)) {
             args.set(name, argClass);
-        }
-        return args;
-    }
-
-    // Fallback to reflection (may not work for destructured React props)
-    const reflected = reflect(chart);
-
-    for (const name of reflected.parameterNames) {
-        if (name === 'dataFrame') continue; // Skip the data prop
-
-        const param = reflected.getParameter(name);
-        const type = param.type.is('union') ? param.type.types[0] : param.type;
-        const argClass = (type as ReflectedClassRef<unknown>)?.reflectedClass?.class;
-
-        if (argClass && (argClass === Argument || argClass.prototype instanceof Argument)) {
-            args.set(name, argClass as typeof Argument);
         }
     }
 
@@ -120,62 +79,34 @@ export function getChartArguments(
 }
 
 /**
- * Generate a Superset controlPanel config from a Glyph chart.
+ * Generate Superset controlPanel from a Glyph chart.
  */
-export function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
+function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
     const args = getChartArguments(chart);
-    const queryControls: (string | ControlConfig)[][] = [];
-    const chartOptions: (string | ControlConfig)[][] = [];
+    const queryControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
 
-    for (const [name, argClass] of args) {
+    for (const [, argClass] of args) {
         const control = getControlForArgument(argClass);
-        const label = argClass.label || name;
-        const description = argClass.description || undefined;
-
-        // Metric and dimension controls go in Query section
         if (control === 'metric' || control === 'groupby') {
             queryControls.push([control]);
-        } else {
-            // Other controls go in Chart Options
-            chartOptions.push([{
-                name,
-                config: {
-                    type: control,
-                    label,
-                    description,
-                    renderTrigger: true,
-                },
-            }]);
         }
     }
 
-    // Always include adhoc_filters for filtering
     queryControls.push(['adhoc_filters']);
 
-    const sections: ControlPanelSection[] = [
-        {
+    return {
+        controlPanelSections: [{
             label: 'Query',
             expanded: true,
             controlSetRows: queryControls,
-        },
-    ];
-
-    if (chartOptions.length > 0) {
-        sections.push({
-            label: 'Chart Options',
-            expanded: true,
-            controlSetRows: chartOptions,
-        });
-    }
-
-    return { controlPanelSections: sections };
+        }],
+    };
 }
 
 /**
- * Generate a transformProps function for a Glyph chart.
- * This converts Superset's chartProps to the Glyph component's props.
+ * Generate transformProps function for a Glyph chart.
  */
-export function generateTransformProps<P extends ChartProps>(
+function generateTransformProps<P extends ChartProps>(
     chart: GlyphChart<P>
 ): (chartProps: SupersetChartProps) => P {
     const args = getChartArguments(chart);
@@ -184,7 +115,7 @@ export function generateTransformProps<P extends ChartProps>(
         const { formData, queriesData } = chartProps;
         const data = queriesData[0]?.data || [];
 
-        // Convert Superset data to Apache Arrow Table
+        // Convert to Apache Arrow Table
         const columns: Record<string, unknown[]> = {};
         if (data.length > 0) {
             for (const key of Object.keys(data[0])) {
@@ -193,30 +124,21 @@ export function generateTransformProps<P extends ChartProps>(
         }
         const dataFrame = tableFromArrays(columns);
 
-        // Build props object
+        // Build props
         const props: Record<string, unknown> = { dataFrame };
 
         for (const [name, argClass] of args) {
             const control = getControlForArgument(argClass);
 
             if (control === 'metric') {
-                // Get metric label from formData
                 const metricValue = formData.metric;
                 const metricLabel = typeof metricValue === 'string'
                     ? metricValue
                     : metricValue?.label || 'value';
                 props[name] = new argClass(metricLabel);
             } else if (control === 'groupby') {
-                // Get first groupby column
                 const groupby = formData.groupby || formData.columns || [];
-                const dimValue = groupby[0] || '';
-                props[name] = new argClass(dimValue);
-            } else {
-                // Other arguments come directly from formData
-                const value = formData[name];
-                if (value !== undefined) {
-                    props[name] = new argClass(String(value));
-                }
+                props[name] = new argClass(groupby[0] || '');
             }
         }
 
@@ -225,38 +147,88 @@ export function generateTransformProps<P extends ChartProps>(
 }
 
 /**
- * Generate a buildQuery function (usually trivial for simple charts).
+ * Superset dependencies passed to makeChartPlugin.
+ * These come from @superset-ui/core in Superset.
  */
-export function generateBuildQuery() {
-    return (formData: QueryFormData) => {
-        // Return a minimal query context structure
-        return {
-            formData,
-            queries: [{ ...formData }],
-        };
-    };
+export interface SupersetDeps {
+    ChartPlugin: new (config: {
+        metadata: unknown;
+        loadChart: () => Promise<{ default: React.FC<unknown> }>;
+        controlPanel: ControlPanelConfig;
+        transformProps: (props: SupersetChartProps) => unknown;
+    }) => unknown;
+    ChartMetadata: new (config: {
+        name: string;
+        description?: string;
+        category?: string;
+        tags?: string[];
+        thumbnail: string;
+    }) => unknown;
+}
+
+export interface PluginOptions {
+    thumbnail: string;
+    key?: string;
 }
 
 /**
- * Create a Superset plugin definition from a Glyph chart.
- * This returns all the pieces needed to register with Superset.
+ * Create a Superset ChartPlugin class from a Glyph chart.
+ *
+ * Usage in Superset:
+ * ```typescript
+ * import { ChartPlugin, ChartMetadata } from '@superset-ui/core';
+ * import { BigNumber, makeChartPlugin } from 'glyph';
+ * import thumbnail from './thumbnail.png';
+ *
+ * export default makeChartPlugin(BigNumber, { ChartPlugin, ChartMetadata }, { thumbnail });
+ * ```
  */
-export function createSupersetPlugin<P extends ChartProps>(chart: GlyphChart<P>) {
-    const metadata = chart.metadata || {
-        name: chart.name || 'Unknown Chart',
-        description: 'A Glyph chart',
+export function makeChartPlugin<P extends ChartProps>(
+    chart: GlyphChart<P>,
+    deps: SupersetDeps,
+    options: PluginOptions
+) {
+    const { ChartPlugin, ChartMetadata } = deps;
+    const meta = chart.metadata || { name: chart.name || 'Chart', description: '' };
+
+    const metadata = new ChartMetadata({
+        name: meta.name,
+        description: meta.description,
+        category: meta.category || 'Glyph',
+        tags: meta.tags || ['Glyph'],
+        thumbnail: options.thumbnail,
+    });
+
+    const controlPanel = generateControlPanel(chart);
+    const transformProps = generateTransformProps(chart);
+
+    return class GlyphChartPlugin extends (ChartPlugin as new (...args: unknown[]) => unknown) {
+        constructor() {
+            super({
+                metadata,
+                loadChart: () => Promise.resolve({ default: chart }),
+                controlPanel,
+                transformProps,
+            });
+        }
     };
+}
+
+// Legacy exports for backward compatibility
+export { generateControlPanel, generateTransformProps };
+
+export function createSupersetPlugin<P extends ChartProps>(chart: GlyphChart<P>) {
+    const meta = chart.metadata || { name: chart.name || 'Chart', description: '' };
 
     return {
         metadata: {
-            name: metadata.name,
-            description: metadata.description,
-            category: 'Glyph',
-            tags: ['Glyph'],
+            name: meta.name,
+            description: meta.description,
+            category: meta.category || 'Glyph',
+            tags: meta.tags || ['Glyph'],
         },
         Chart: chart,
         controlPanel: generateControlPanel(chart),
         transformProps: generateTransformProps(chart),
-        buildQuery: generateBuildQuery(),
     };
 }
