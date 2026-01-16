@@ -1,6 +1,20 @@
 import { Table } from 'apache-arrow';
-import { Metric, DataRow, renderValue } from '../../types';
+import { Metric, DataRow } from '../../types';
 import { createChart } from '../../createChart';
+
+/**
+ * Format a number for display (2 decimal places, with thousands separators).
+ */
+function formatNumber(value: unknown): string {
+    if (typeof value === 'number') {
+        return value.toLocaleString(undefined, {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
+        });
+    }
+    if (typeof value === 'string') return value;
+    return 'N/A';
+}
 
 /**
  * BigNumber - The simplest possible Glyph chart.
@@ -33,7 +47,7 @@ function renderBigNumber(dataFrame: Table, metric: Metric): React.ReactNode {
         <div>
             {values.map((row, i) => (
                 <div key={i}>
-                    <h1>{renderValue(row[metricColumn])}</h1>
+                    <h1>{formatNumber(row[metricColumn])}</h1>
                 </div>
             ))}
         </div>

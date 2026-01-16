@@ -24,7 +24,7 @@ export interface DropZoneProps {
  * Map from Glyph's DragItemType to the actual drag type strings used by the host.
  * Superset uses: 'column', 'metric', etc. as item.type in useDrag.
  */
-const ACCEPT_TYPE_MAP: Record<DragItemType, string[]> = {
+export const ACCEPT_TYPE_MAP: Record<DragItemType, string[]> = {
     [DragItemType.Column]: ['column', 'columnOption'],
     [DragItemType.Metric]: ['metric', 'metricOption'],
     [DragItemType.Temporal]: ['column', 'columnOption'], // temporal is a column subtype
@@ -34,7 +34,7 @@ const ACCEPT_TYPE_MAP: Record<DragItemType, string[]> = {
 /**
  * Convert host drag item to Glyph DragItem format.
  */
-function convertToDragItem(item: unknown): DragItem | null {
+export function convertToDragItem(item: unknown): DragItem | null {
     if (!item || typeof item !== 'object') return null;
 
     const hostItem = item as { type?: string; value?: unknown };
