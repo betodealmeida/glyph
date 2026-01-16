@@ -1,34 +1,13 @@
-import { Table, StructRow } from 'apache-arrow';
-import { Metric, GlyphTheme, ChartHooks } from '../../types';
+import { Table } from 'apache-arrow';
+import { Metric, DataRow, renderValue } from '../../types';
 import { createChart } from '../../createChart';
 
 /**
- * BigNumber using pure reflection - the simplest possible API!
+ * BigNumber - The simplest possible Glyph chart.
  *
- * Just write a function with semantic arguments.
- * No interfaces, no metadata, no duplication.
+ * Just declare the parameters you need. No boilerplate required.
  */
-
-interface DataRow extends StructRow {
-    [key: string]: unknown;
-}
-
-function renderValue(value: unknown): string | number {
-    if (typeof value === 'number' || typeof value === 'string') return value;
-    return 'N/A';
-}
-
-// Define the render function as a regular function (not arrow)
-// This works better with reflection
-function renderBigNumber(
-    dataFrame: Table,
-    _theme: GlyphTheme | undefined,
-    _width: number | undefined,
-    _height: number | undefined,
-    _hooks: ChartHooks | undefined,
-    _datasourceColumns: Array<{ name: string; type?: string; is_dttm?: boolean }> | undefined,
-    metric: Metric
-): React.ReactNode {
+function renderBigNumber(dataFrame: Table, metric: Metric): React.ReactNode {
     const metricColumn = metric?.value;
     const values = dataFrame?.toArray() as DataRow[] || [];
 
@@ -61,7 +40,6 @@ function renderBigNumber(
     );
 }
 
-// This is it! The entire chart definition:
 export const BigNumber = createChart(
     'Glyph Big Number',
     renderBigNumber,

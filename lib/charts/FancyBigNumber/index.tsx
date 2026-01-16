@@ -1,17 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Table, StructRow } from 'apache-arrow';
-import { Metric, Int, Color, GlyphTheme, ChartHooks, DragItem, DragItemType, defaultTheme, ChartProps } from '../../types';
+import { Table } from 'apache-arrow';
+import { Metric, Int, Color, GlyphTheme, DragItem, DragItemType, defaultTheme, ChartProps, DataRow, renderValue } from '../../types';
 import { createChart, GlyphChart } from '../../createChart';
 import { DropZone } from '../../components/DropZone';
-
-interface DataRow extends StructRow {
-    [key: string]: unknown;
-}
-
-function renderValue(value: unknown): string | number {
-    if (typeof value === 'number' || typeof value === 'string') return value;
-    return 'N/A';
-}
 
 // Define custom types - clean and simple!
 class FontSize extends Int.with({ label: 'Font Size', min: 12, max: 200 }) {}
@@ -22,11 +13,6 @@ class FontColor extends Color.with({ label: 'Font Color', default: '#1f77b4' }) 
  */
 function renderFancyBigNumber(
     dataFrame: Table,
-    _theme: GlyphTheme | undefined,
-    _width: number | undefined,
-    _height: number | undefined,
-    _hooks: ChartHooks | undefined,
-    _datasourceColumns: Array<{ name: string; type?: string; is_dttm?: boolean }> | undefined,
     metric: Metric,
     size: FontSize,
     color: FontColor

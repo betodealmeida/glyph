@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Table } from 'apache-arrow';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme, ChartHooks } from '../../types';
+import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme } from '../../types';
 import { createChart } from '../../createChart';
 
 // Color palette for multiple series
@@ -58,8 +58,6 @@ function renderLineChart(
     theme: GlyphTheme | undefined,
     width: number | undefined,
     height: number | undefined,
-    _hooks: ChartHooks | undefined,
-    _datasourceColumns: Array<{ name: string; type?: string; is_dttm?: boolean }> | undefined,
     time: Temporal,
     metric: Metric,
     groupBy?: Dimension

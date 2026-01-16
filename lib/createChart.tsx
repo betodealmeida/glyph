@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { Table } from 'apache-arrow';
 import { reflect, ReflectedClassRef } from 'typescript-rtti';
 import { Argument, Metric, Dimension, Temporal, Int, Color, ChartProps } from './types';
 
@@ -53,25 +52,37 @@ export function registerArgumentClass(cls: typeof Argument): void {
 }
 
 /**
+ * Built-in parameter names that are handled specially by createChart.
+ */
+const BUILTIN_PARAMS = ['dataFrame', 'theme', 'width', 'height', 'hooks', 'datasourceColumns'] as const;
+type BuiltinParam = typeof BUILTIN_PARAMS[number];
+
+/**
  * Extract argument info using typescript-rtti's reflect() function.
- * Falls back to looking up classes by type name from the registry.
+ * Returns both chart arguments and which built-in params are declared.
  */
 function extractArgumentsFromMetadata(
     renderFn: Function
-): { names: string[]; args: Map<string, typeof Argument> } {
+): {
+    names: string[];
+    args: Map<string, typeof Argument>;
+    builtinParams: BuiltinParam[];
+} {
     const args = new Map<string, typeof Argument>();
     const names: string[] = [];
+    const builtinParams: BuiltinParam[] = [];
 
     try {
         const reflected = reflect(renderFn);
 
         for (const paramName of reflected.parameterNames) {
-            // Skip built-in parameters (handled separately)
+            // Check if this is a built-in parameter
             // Strip leading underscores for comparison (allows _hooks, _theme, etc.)
-            const normalizedName = paramName.replace(/^_+/, '');
-            if (normalizedName === 'dataFrame' || normalizedName === 'theme' ||
-                normalizedName === 'width' || normalizedName === 'height' ||
-                normalizedName === 'hooks' || normalizedName === 'datasourceColumns') continue;
+            const normalizedName = paramName.replace(/^_+/, '') as BuiltinParam;
+            if (BUILTIN_PARAMS.includes(normalizedName)) {
+                builtinParams.push(normalizedName);
+                continue;
+            }
 
             names.push(paramName);
 
@@ -162,7 +173,7 @@ function extractArgumentsFromMetadata(
         console.warn('[createChart] Reflection failed:', e);
     }
 
-    return { names, args };
+    return { names, args, builtinParams };
 }
 
 /**
@@ -178,16 +189,26 @@ export interface CreateChartOptions extends Partial<ChartMetadata> {
 
 /**
  * Create a Glyph chart from a render function.
- * The render function can accept any Argument subclasses (Metric, Int, Color, etc.)
+ *
+ * The render function declares which parameters it needs:
+ * - Built-in params (dataFrame, theme, width, height, hooks, datasourceColumns) are optional
+ * - Chart arguments (Metric, Dimension, Int, Color, etc.) follow the built-in params
+ *
+ * @example
+ * // Minimal chart - just dataFrame and a metric
+ * function renderSimple(dataFrame: Table, metric: Metric) { ... }
+ *
+ * // Chart with theme and dimensions
+ * function renderStyled(dataFrame: Table, theme: GlyphTheme, width: number, metric: Metric) { ... }
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createChart(
     name: string,
-    renderFn: (dataFrame: Table, ...args: any[]) => React.ReactNode,
+    renderFn: (...args: any[]) => React.ReactNode,
     options?: CreateChartOptions
 ): GlyphChart {
-    // Extract arguments from metadata
-    const { names: parameterNames, args: extractedArgs } = extractArgumentsFromMetadata(renderFn);
+    // Extract arguments and which built-in params are declared
+    const { names: parameterNames, args: extractedArgs, builtinParams } = extractArgumentsFromMetadata(renderFn);
 
     // Merge explicit argument overrides
     if (options?.arguments) {
@@ -200,11 +221,27 @@ export function createChart(
     function ChartComponent(props: ChartProps & Record<string, Argument>) {
         const { dataFrame, theme, width, height, hooks, datasourceColumns, ...argProps } = props;
 
-        // Build argument array in parameter order
-        const argValues = parameterNames.map(paramName => argProps[paramName]);
+        // Build the arguments array based on what the render function declared
+        const callArgs: unknown[] = [];
 
-        // Pass built-in props then argument values
-        return renderFn(dataFrame, theme, width, height, hooks, datasourceColumns, ...argValues);
+        // Add built-in params in the order they were declared
+        for (const param of builtinParams) {
+            switch (param) {
+                case 'dataFrame': callArgs.push(dataFrame); break;
+                case 'theme': callArgs.push(theme); break;
+                case 'width': callArgs.push(width); break;
+                case 'height': callArgs.push(height); break;
+                case 'hooks': callArgs.push(hooks); break;
+                case 'datasourceColumns': callArgs.push(datasourceColumns); break;
+            }
+        }
+
+        // Add chart arguments in order
+        for (const paramName of parameterNames) {
+            callArgs.push(argProps[paramName]);
+        }
+
+        return renderFn(...callArgs);
     }
 
     // Create a wrapper object that acts as the chart

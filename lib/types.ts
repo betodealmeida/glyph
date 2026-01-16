@@ -1,4 +1,19 @@
-import { Table } from 'apache-arrow';
+import { Table, StructRow } from 'apache-arrow';
+
+/**
+ * Generic data row type for chart rendering.
+ */
+export interface DataRow extends StructRow {
+    [key: string]: unknown;
+}
+
+/**
+ * Helper to render a value as string or number, with fallback.
+ */
+export function renderValue(value: unknown, fallback: string | number = 'N/A'): string | number {
+    if (typeof value === 'number' || typeof value === 'string') return value;
+    return fallback;
+}
 
 /**
  * Drag-and-drop item types (generic, not platform-specific).
