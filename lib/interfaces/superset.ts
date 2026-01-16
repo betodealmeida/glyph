@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { tableFromArrays } from 'apache-arrow';
-import { Argument, ColumnType } from '../types';
+import { Argument, ColumnType, Int, Color } from '../types';
 import { GlyphChart as CreateChartGlyphChart } from '../createChart';
 
 /**
@@ -53,6 +53,40 @@ export type GlyphChart =
     });
 
 /**
+ * RGBA color format used by Superset's ColorPickerControl.
+ */
+interface RgbaColor {
+    r: number;
+    g: number;
+    b: number;
+    a: number;
+}
+
+/**
+ * Convert hex color string to RGBA object for Superset's ColorPickerControl.
+ */
+function hexToRgba(hex: string): RgbaColor {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (result && result[1] && result[2] && result[3]) {
+        return {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16),
+            a: 1,
+        };
+    }
+    return { r: 0, g: 0, b: 0, a: 1 };
+}
+
+/**
+ * Convert RGBA object to hex color string.
+ */
+function rgbaToHex(rgba: RgbaColor): string {
+    const toHex = (n: number) => n.toString(16).padStart(2, '0');
+    return `#${toHex(rgba.r)}${toHex(rgba.g)}${toHex(rgba.b)}`;
+}
+
+/**
  * Mapping from Glyph ColumnType to Superset control type.
  */
 const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
@@ -61,10 +95,66 @@ const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
     [ColumnType.Argument]: 'TextControl',
 };
 
+/**
+ * Get the Superset control type for an argument class.
+ * Special cases Int and Color for their specific controls.
+ */
 function getControlForArgument(argClass: typeof Argument): string {
+    // Check for specific argument types first
+    if (argClass === Int || argClass.prototype instanceof Int) {
+        return 'SliderControl';
+    }
+    if (argClass === Color || argClass.prototype instanceof Color) {
+        return 'ColorPickerControl';
+    }
+
+    // Fall back to column type mapping
     const types = argClass.types || [ColumnType.Argument];
     const firstType = types[0];
     return firstType ? COLUMN_TYPE_TO_CONTROL[firstType] || 'TextControl' : 'TextControl';
+}
+
+/**
+ * Get control configuration for an argument class.
+ */
+function getControlConfig(argClass: typeof Argument, paramName: string): Record<string, unknown> {
+    const label = argClass.label || paramName;
+    const description = argClass.description || '';
+
+    if (argClass === Int || argClass.prototype instanceof Int) {
+        const intClass = argClass as typeof Int;
+        return {
+            type: 'SliderControl',
+            label,
+            description,
+            default: intClass.default ?? 32,
+            min: intClass.min ?? 8,
+            max: intClass.max ?? 128,
+            step: 1,
+            renderTrigger: true,
+        };
+    }
+
+    if (argClass === Color || argClass.prototype instanceof Color) {
+        const colorClass = argClass as typeof Color;
+        // Convert hex default to RGBA format for Superset's ColorPickerControl
+        const hexDefault = colorClass.default ?? '#000000';
+        const rgbaDefault = hexToRgba(hexDefault);
+        return {
+            type: 'ColorPickerControl',
+            label,
+            description,
+            default: rgbaDefault,
+            renderTrigger: true,
+        };
+    }
+
+    return {
+        type: 'TextControl',
+        label,
+        description,
+        renderTrigger: true,
+    };
 }
 
 /**
@@ -98,23 +188,42 @@ export function getChartArguments(chart: GlyphChart): Map<string, typeof Argumen
 function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
     const args = getChartArguments(chart);
     const queryControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
+    const customizeControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
 
-    for (const [, argClass] of args) {
+    for (const [paramName, argClass] of args) {
         const control = getControlForArgument(argClass);
+
         if (control === 'metric' || control === 'groupby') {
+            // Data controls go in Query section
             queryControls.push([control]);
+        } else {
+            // Style controls (Int, Color, etc.) go in Customize section
+            customizeControls.push([{
+                name: paramName,
+                config: getControlConfig(argClass, paramName),
+            }]);
         }
     }
 
     queryControls.push(['adhoc_filters']);
 
-    return {
-        controlPanelSections: [{
+    const sections: ControlPanelConfig['controlPanelSections'] = [
+        {
             label: 'Query',
             expanded: true,
             controlSetRows: queryControls,
-        }],
-    };
+        },
+    ];
+
+    if (customizeControls.length > 0) {
+        sections.push({
+            label: 'Customize',
+            expanded: true,
+            controlSetRows: customizeControls,
+        });
+    }
+
+    return { controlPanelSections: sections };
 }
 
 /**
@@ -154,6 +263,31 @@ function generateTransformProps(
             } else if (control === 'groupby') {
                 const groupby = formData.groupby || formData.columns || [];
                 props[name] = new argClass(groupby[0] || '');
+            } else if (control === 'SliderControl') {
+                // Int control - get value from formData
+                const value = formData[name] ?? (argClass as typeof Int).default ?? 32;
+                props[name] = new (argClass as typeof Int)(value as string | number);
+            } else if (control === 'ColorPickerControl') {
+                // Color control - get value from formData
+                const colorClass = argClass as typeof Color;
+                const defaultRgba = hexToRgba(colorClass.default ?? '#000000');
+                const value = formData[name] ?? defaultRgba;
+                // Handle Superset's RGBA color format { r, g, b, a }
+                let colorValue: string;
+                if (typeof value === 'object' && value !== null && 'r' in value) {
+                    colorValue = rgbaToHex(value as RgbaColor);
+                } else if (typeof value === 'string') {
+                    colorValue = value;
+                } else {
+                    colorValue = '#000000';
+                }
+                props[name] = new argClass(colorValue);
+            } else {
+                // Generic argument - try to get from formData
+                const value = formData[name];
+                if (value !== undefined) {
+                    props[name] = new argClass(String(value));
+                }
             }
         }
 
@@ -181,6 +315,9 @@ export interface SupersetDeps {
         tags?: string[];
         thumbnail: string;
     }) => unknown;
+    // Optional: buildQueryContext for proper query generation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    buildQueryContext?: (formData: any, buildQuery: (baseQuery: any) => any[]) => any;
 }
 
 export interface PluginOptions {
@@ -212,15 +349,72 @@ function getChartMetadata(chart: GlyphChart): { name: string; description: strin
 }
 
 /**
+ * Get parameter names that are visualization-only (should not be sent to backend).
+ * These are Int, Color, and other non-data arguments.
+ */
+function getVisualizationOnlyParams(chart: GlyphChart): Set<string> {
+    const args = getChartArguments(chart);
+    const vizOnlyParams = new Set<string>();
+
+    for (const [paramName, argClass] of args) {
+        const control = getControlForArgument(argClass);
+        // SliderControl (Int) and ColorPickerControl (Color) are visualization-only
+        if (control === 'SliderControl' || control === 'ColorPickerControl' || control === 'TextControl') {
+            vizOnlyParams.add(paramName);
+        }
+    }
+
+    return vizOnlyParams;
+}
+
+/**
+ * Generate a buildQuery function that filters out visualization-only controls.
+ */
+function generateBuildQuery(
+    chart: GlyphChart,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    buildQueryContext: (formData: any, buildQuery: (baseQuery: any) => any[]) => any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+): (formData: any) => any {
+    const vizOnlyParams = getVisualizationOnlyParams(chart);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (formData: any) => {
+        // Clean formData by removing visualization-only params before building query
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cleanedFormData: Record<string, any> = { ...formData };
+
+        // Remove visualization-only params from formData
+        for (const param of vizOnlyParams) {
+            delete cleanedFormData[param];
+        }
+
+        // Also filter metrics array if it contains non-metric values
+        if (Array.isArray(cleanedFormData.metrics)) {
+            cleanedFormData.metrics = cleanedFormData.metrics.filter(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (m: any) => typeof m === 'string' || (typeof m === 'object' && m !== null && 'label' in m)
+            );
+        }
+
+        return buildQueryContext(cleanedFormData, baseQueryObject => [
+            {
+                ...baseQueryObject,
+            },
+        ]);
+    };
+}
+
+/**
  * Create a Superset ChartPlugin class from a Glyph chart.
  *
  * Usage in Superset:
  * ```typescript
- * import { ChartPlugin, ChartMetadata } from '@superset-ui/core';
+ * import { ChartPlugin, ChartMetadata, buildQueryContext } from '@superset-ui/core';
  * import { BigNumberPure, makeChartPlugin } from 'glyph';
  * import thumbnail from './thumbnail.png';
  *
- * export default makeChartPlugin(BigNumberPure, { ChartPlugin, ChartMetadata }, { thumbnail });
+ * export default makeChartPlugin(BigNumberPure, { ChartPlugin, ChartMetadata, buildQueryContext }, { thumbnail });
  * ```
  */
 export function makeChartPlugin(
@@ -228,7 +422,7 @@ export function makeChartPlugin(
     deps: SupersetDeps,
     options: PluginOptions
 ) {
-    const { ChartPlugin, ChartMetadata: SupersetChartMetadata } = deps;
+    const { ChartPlugin, ChartMetadata: SupersetChartMetadata, buildQueryContext } = deps;
     const meta = getChartMetadata(chart);
 
     const metadata = new SupersetChartMetadata({
@@ -243,16 +437,24 @@ export function makeChartPlugin(
     const transformProps = generateTransformProps(chart);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pluginConfig: Record<string, any> = {
+        metadata,
+        loadChart: () => Promise.resolve({ default: chart as React.FC<unknown> }),
+        controlPanel,
+        transformProps,
+    };
+
+    // Add buildQuery if buildQueryContext is provided
+    if (buildQueryContext) {
+        pluginConfig.buildQuery = generateBuildQuery(chart, buildQueryContext);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const BasePlugin = ChartPlugin as new (config: any) => any;
 
     return class GlyphChartPlugin extends BasePlugin {
         constructor() {
-            super({
-                metadata,
-                loadChart: () => Promise.resolve({ default: chart as React.FC<unknown> }),
-                controlPanel,
-                transformProps,
-            });
+            super(pluginConfig);
         }
     };
 }

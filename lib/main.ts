@@ -2,7 +2,7 @@ import "reflect-metadata";
 
 // Re-export types
 export type { ChartProps } from './types';
-export { Argument, Metric, Dimension, ColumnType } from './types';
+export { Argument, Metric, Dimension, Int, Color, ColumnType } from './types';
 
 // Re-export chart creation
 export { createChart, registerArgumentClass } from './createChart';
@@ -24,3 +24,4 @@ export type {
 
 // Re-export charts
 export { BigNumber } from './charts/BigNumber';
+export { FancyBigNumber } from './charts/FancyBigNumber';

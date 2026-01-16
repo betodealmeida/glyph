@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Table } from 'apache-arrow';
 import { reflect, ReflectedClassRef } from 'typescript-rtti';
-import { Argument, Metric, Dimension, ChartProps } from './types';
+import { Argument, Metric, Dimension, Int, Color, ChartProps } from './types';
 
 /**
  * Chart render function type.
@@ -39,6 +39,8 @@ export interface GlyphChart extends React.FC<GlyphChartProps> {
 const ArgumentClassRegistry = new Map<string, typeof Argument>([
     ['Metric', Metric],
     ['Dimension', Dimension],
+    ['Int', Int],
+    ['Color', Color],
     ['Argument', Argument],
 ]);
 
@@ -125,6 +127,25 @@ function extractArgumentsFromMetadata(
                     }
                 }
             }
+
+            // Additional fallback: common parameter name patterns
+            if (!found) {
+                const paramLower = paramName.toLowerCase();
+                // Size/font size patterns -> Int
+                if (paramLower.includes('size') || paramLower.includes('width') ||
+                    paramLower.includes('height') || paramLower.includes('font')) {
+                    args.set(paramName, Int);
+                    console.log(`[createChart] Found argument (by pattern): ${paramName} -> Int`);
+                    found = true;
+                }
+                // Color patterns
+                else if (paramLower.includes('color') || paramLower.includes('colour') ||
+                         paramLower.includes('fill') || paramLower.includes('stroke')) {
+                    args.set(paramName, Color);
+                    console.log(`[createChart] Found argument (by pattern): ${paramName} -> Color`);
+                    found = true;
+                }
+            }
         }
     } catch (e) {
         console.warn('[createChart] Reflection failed:', e);
@@ -135,10 +156,12 @@ function extractArgumentsFromMetadata(
 
 /**
  * Create a Glyph chart from a render function.
+ * The render function can accept any Argument subclasses (Metric, Int, Color, etc.)
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createChart(
     name: string,
-    renderFn: (dataFrame: Table, ...args: Argument[]) => React.ReactNode,
+    renderFn: (dataFrame: Table, ...args: any[]) => React.ReactNode,
     options?: Partial<ChartMetadata>
 ): GlyphChart {
     // Extract arguments from metadata
@@ -150,10 +173,10 @@ export function createChart(
     function ChartComponent(props: ChartProps & Record<string, Argument>) {
         const { dataFrame, ...argProps } = props;
 
-        // Build argument array in parameter order
-        const argValues: Argument[] = parameterNames
-            .map(paramName => argProps[paramName])
-            .filter((arg): arg is Argument => arg !== undefined);
+        // Build argument array in parameter order (preserve order, don't filter)
+        const argValues = parameterNames.map(paramName => argProps[paramName]);
+
+        console.log('[ChartComponent] Rendering with args:', parameterNames, argValues);
 
         return renderFn(dataFrame, ...argValues);
     }
