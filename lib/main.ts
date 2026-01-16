@@ -1,12 +1,12 @@
 import "reflect-metadata";
 
 // Re-export types
-export type { ChartProps } from './types';
+export type { ChartProps, IntOptions, ColorOptions } from './types';
 export { Argument, Metric, Dimension, Int, Color, ColumnType } from './types';
 
 // Re-export chart creation
 export { createChart, registerArgumentClass } from './createChart';
-export type { GlyphChart, ChartMetadata, ChartRenderFn } from './createChart';
+export type { GlyphChart, ChartMetadata, ChartRenderFn, CreateChartOptions } from './createChart';
 
 // Re-export Superset adapter
 export {

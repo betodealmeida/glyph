@@ -155,6 +155,27 @@ function extractArgumentsFromMetadata(
 }
 
 /**
+ * Extended options for createChart, including explicit argument overrides.
+ */
+export interface CreateChartOptions extends Partial<ChartMetadata> {
+    /**
+     * Explicit argument class mapping. Use this to specify custom Field() classes
+     * that can't be discovered via reflection.
+     *
+     * @example
+     * ```typescript
+     * const FontSize = Field(Int, { label: 'Font Size', min: 12, max: 200 });
+     * type FontSize = Int;
+     *
+     * createChart('My Chart', renderFn, {
+     *     arguments: { size: FontSize }
+     * });
+     * ```
+     */
+    arguments?: Record<string, typeof Argument>;
+}
+
+/**
  * Create a Glyph chart from a render function.
  * The render function can accept any Argument subclasses (Metric, Int, Color, etc.)
  */
@@ -162,12 +183,20 @@ function extractArgumentsFromMetadata(
 export function createChart(
     name: string,
     renderFn: (dataFrame: Table, ...args: any[]) => React.ReactNode,
-    options?: Partial<ChartMetadata>
+    options?: CreateChartOptions
 ): GlyphChart {
     // Extract arguments from metadata
     const { names: parameterNames, args: extractedArgs } = extractArgumentsFromMetadata(renderFn);
 
-    console.log(`[createChart] ${name} - discovered arguments:`, Array.from(extractedArgs.keys()));
+    // Merge explicit argument overrides
+    if (options?.arguments) {
+        for (const [paramName, argClass] of Object.entries(options.arguments)) {
+            extractedArgs.set(paramName, argClass);
+            console.log(`[createChart] Override argument: ${paramName} -> ${argClass.name || 'CustomField'}`);
+        }
+    }
+
+    console.log(`[createChart] ${name} - final arguments:`, Array.from(extractedArgs.keys()));
 
     // Create the React component as a plain object first, then add function behavior
     function ChartComponent(props: ChartProps & Record<string, Argument>) {

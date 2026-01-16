@@ -11,6 +11,10 @@ function renderValue(value: unknown): string | number {
     return 'N/A';
 }
 
+// Define custom types - clean and simple!
+class FontSize extends Int.with({ label: 'Font Size', min: 12, max: 200 }) {}
+class FontColor extends Color.with({ label: 'Font Color', default: '#1f77b4' }) {}
+
 /**
  * FancyBigNumber - a Big Number chart with customizable size and color.
  *
@@ -20,8 +24,8 @@ function renderValue(value: unknown): string | number {
 function renderFancyBigNumber(
     dataFrame: Table,
     metric: Metric,
-    size: Int,
-    color: Color
+    size: FontSize,
+    color: FontColor
 ): React.ReactNode {
     // Debug: log what we received
     console.log('[FancyBigNumber] Props received:', { metric, size, color });
