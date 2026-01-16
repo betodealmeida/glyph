@@ -246,3 +246,52 @@ export class Color extends Argument {
     }
 }
 
+/**
+ * Default color palette (D3 category10).
+ */
+export const DEFAULT_PALETTE = [
+    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+];
+
+export interface PaletteOptions {
+    label?: string;
+    description?: string;
+}
+
+/**
+ * A color palette for categorical data.
+ * Maps to Superset's color_scheme control.
+ */
+export class Palette extends Argument {
+    static override types: ColumnType[] = [ColumnType.Argument];
+    static override label: string | null = 'Color Scheme';
+    static override description: string | null = 'A color palette for the chart';
+
+    /** The colors in this palette */
+    colors: string[];
+
+    constructor(value: string, colors?: string[]) {
+        super(value);
+        this.colors = colors || DEFAULT_PALETTE;
+    }
+
+    /**
+     * Get color at index (cycles through palette).
+     */
+    getColor(index: number): string {
+        return this.colors[index % this.colors.length] || DEFAULT_PALETTE[0]!;
+    }
+
+    /**
+     * Create a configured Palette type.
+     */
+    static with(options: PaletteOptions): typeof Palette {
+        const Base = this;
+        return class extends Base {
+            static override label = options.label ?? Base.label;
+            static override description = options.description ?? Base.description;
+        };
+    }
+}
+

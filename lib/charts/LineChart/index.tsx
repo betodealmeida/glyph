@@ -2,14 +2,8 @@ import { useEffect, useRef } from 'react';
 import { Table } from 'apache-arrow';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme } from '../../types';
+import { Metric, Temporal, Dimension, Palette, GlyphTheme, defaultTheme } from '../../types';
 import { createChart } from '../../createChart';
-
-// Color palette for multiple series
-const COLORS = [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-];
 
 /**
  * Convert a value to a Unix timestamp in seconds.
@@ -60,7 +54,8 @@ function renderLineChart(
     height: number | undefined,
     time: Temporal,
     metric: Metric,
-    groupBy?: Dimension
+    groupBy?: Dimension,
+    palette?: Palette
 ): React.ReactNode {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<uPlot | null>(null);
@@ -138,7 +133,7 @@ function renderLineChart(
 
                 series.push({
                     label: groupName,
-                    stroke: COLORS[colorIndex % COLORS.length],
+                    stroke: palette?.getColor(colorIndex) || '#1f77b4',
                     width: 2,
                     spanGaps: true,
                 });
@@ -172,7 +167,7 @@ function renderLineChart(
                 {},
                 {
                     label: metric?.value || 'Value',
-                    stroke: COLORS[0],
+                    stroke: palette?.getColor(0) || '#1f77b4',
                     width: 2,
                 },
             ];
@@ -224,7 +219,7 @@ function renderLineChart(
                 chartRef.current = null;
             }
         };
-    }, [dataFrame, isConfigured, hasData, groupBy, currentTheme, chartWidth, chartHeight, timeColumn, metricColumn]);
+    }, [dataFrame, isConfigured, hasData, groupBy, palette, currentTheme, chartWidth, chartHeight, timeColumn, metricColumn]);
 
     // Show placeholder when not configured
     if (!isConfigured) {

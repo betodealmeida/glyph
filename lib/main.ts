@@ -1,8 +1,8 @@
 import "reflect-metadata";
 
 // Re-export types
-export type { ChartProps, IntOptions, ColorOptions, TemporalOptions, GlyphTheme, ChartHooks, DragItem } from './types';
-export { Argument, Metric, Dimension, Temporal, Int, Color, ColumnType, DragItemType, defaultTheme } from './types';
+export type { ChartProps, IntOptions, ColorOptions, TemporalOptions, PaletteOptions, GlyphTheme, ChartHooks, DragItem } from './types';
+export { Argument, Metric, Dimension, Temporal, Int, Color, Palette, DEFAULT_PALETTE, ColumnType, DragItemType, defaultTheme } from './types';
 
 // Re-export components
 export { DropZone } from './components';

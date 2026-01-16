@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { tableFromArrays } from 'apache-arrow';
-import { Argument, ColumnType, Int, Color, GlyphTheme, defaultTheme, ChartHooks } from '../types';
+import { Argument, ColumnType, Int, Color, Palette, DEFAULT_PALETTE, GlyphTheme, defaultTheme, ChartHooks } from '../types';
 // Note: Temporal is handled via ColumnType.Temporal mapping, not direct import
 import { GlyphChart as CreateChartGlyphChart } from '../createChart';
 
@@ -162,7 +162,7 @@ const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
 
 /**
  * Get the Superset control type for an argument class.
- * Special cases Int and Color for their specific controls.
+ * Special cases Int, Color, and Palette for their specific controls.
  */
 function getControlForArgument(argClass: typeof Argument): string {
     // Check for specific argument types first
@@ -171,6 +171,9 @@ function getControlForArgument(argClass: typeof Argument): string {
     }
     if (argClass === Color || argClass.prototype instanceof Color) {
         return 'ColorPickerControl';
+    }
+    if (argClass === Palette || argClass.prototype instanceof Palette) {
+        return 'color_scheme';
     }
 
     // Fall back to column type mapping
@@ -210,6 +213,15 @@ function getControlConfig(argClass: typeof Argument, paramName: string): Record<
             label,
             description,
             default: rgbaDefault,
+            renderTrigger: true,
+        };
+    }
+
+    if (argClass === Palette || argClass.prototype instanceof Palette) {
+        return {
+            type: 'ColorSchemeControl',
+            label,
+            description,
             renderTrigger: true,
         };
     }
@@ -263,6 +275,9 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
         } else if (control === 'granularity_sqla') {
             // Temporal control - add x_axis and time_grain_sqla
             hasTemporalArg = true;
+        } else if (control === 'color_scheme') {
+            // Color scheme is a built-in Superset control, goes in Customize
+            customizeControls.push(['color_scheme']);
         } else {
             // Style controls (Int, Color, etc.) go in Customize section
             customizeControls.push([{
@@ -319,7 +334,8 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
  * Generate transformProps function for a Glyph chart.
  */
 function generateTransformProps(
-    chart: GlyphChart
+    chart: GlyphChart,
+    getColorSchemeColors?: (schemeName: string) => string[]
 ): (chartProps: SupersetChartProps) => Record<string, unknown> {
     const args = getChartArguments(chart);
 
@@ -396,6 +412,14 @@ function generateTransformProps(
                     colorValue = '#000000';
                 }
                 props[name] = new argClass(colorValue);
+            } else if (control === 'color_scheme') {
+                // Color scheme control - get scheme name from formData
+                // Superset may use either snake_case or camelCase
+                const schemeName = (formData.color_scheme || formData.colorScheme || 'supersetColors') as string;
+                // Look up actual colors from Superset's color registry if available
+                const schemeColors = getColorSchemeColors?.(schemeName) || DEFAULT_PALETTE;
+                const paletteClass = argClass as typeof Palette;
+                props[name] = new paletteClass(schemeName, schemeColors);
             } else {
                 // Generic argument - try to get from formData
                 const value = formData[name];
@@ -442,6 +466,11 @@ export interface SupersetDeps {
     // Optional: buildQueryContext for proper query generation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     buildQueryContext?: (formData: any, buildQuery: (baseQuery: any) => any[]) => any;
+    /**
+     * Optional: Function to get colors from a color scheme name.
+     * Typically: (name) => CategoricalColorNamespace.getScale(name).colors
+     */
+    getColorSchemeColors?: (schemeName: string) => string[];
 }
 
 export interface PluginOptions {
@@ -482,8 +511,8 @@ function getVisualizationOnlyParams(chart: GlyphChart): Set<string> {
 
     for (const [paramName, argClass] of args) {
         const control = getControlForArgument(argClass);
-        // SliderControl (Int) and ColorPickerControl (Color) are visualization-only
-        if (control === 'SliderControl' || control === 'ColorPickerControl' || control === 'TextControl') {
+        // SliderControl (Int), ColorPickerControl (Color), color_scheme (Palette), and TextControl are visualization-only
+        if (control === 'SliderControl' || control === 'ColorPickerControl' || control === 'color_scheme' || control === 'TextControl') {
             vizOnlyParams.add(paramName);
         }
     }
@@ -603,7 +632,7 @@ export function makeChartPlugin(
     deps: SupersetDeps,
     options: PluginOptions
 ) {
-    const { ChartPlugin, ChartMetadata: SupersetChartMetadata, buildQueryContext } = deps;
+    const { ChartPlugin, ChartMetadata: SupersetChartMetadata, buildQueryContext, getColorSchemeColors } = deps;
     const meta = getChartMetadata(chart);
 
     const metadata = new SupersetChartMetadata({
@@ -617,7 +646,7 @@ export function makeChartPlugin(
     });
 
     const controlPanel = generateControlPanel(chart);
-    const transformProps = generateTransformProps(chart);
+    const transformProps = generateTransformProps(chart, getColorSchemeColors);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pluginConfig: Record<string, any> = {

@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { reflect, ReflectedClassRef } from 'typescript-rtti';
-import { Argument, Metric, Dimension, Temporal, Int, Color, ChartProps } from './types';
+import { Argument, Metric, Dimension, Temporal, Int, Color, Palette, ChartProps } from './types';
 
 /**
  * Chart render function type.
@@ -41,6 +41,7 @@ const ArgumentClassRegistry = new Map<string, typeof Argument>([
     ['Temporal', Temporal],
     ['Int', Int],
     ['Color', Color],
+    ['Palette', Palette],
     ['Argument', Argument],
 ]);
 
