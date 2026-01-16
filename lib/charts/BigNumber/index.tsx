@@ -1,14 +1,43 @@
+import { Table, StructRow } from 'apache-arrow';
 import { Metric } from '../../types';
+import { createChart } from '../../createChart';
 
-type BigNumberProps = {
-    metric: Metric;
+/**
+ * BigNumber using pure reflection - the simplest possible API!
+ *
+ * Just write a function with semantic arguments.
+ * No interfaces, no metadata, no duplication.
+ */
+
+interface DataRow extends StructRow {
+    [key: string]: unknown;
 }
 
-export function BigNumber({ metric }: BigNumberProps) {
-    const value = metric.values?.[0];
-
-    if (value === undefined) return <h1>no data</h1>;
-    if (typeof value === 'number' || typeof value === 'string') return <h1>{value}</h1>;
-
-    return <h1>unexpected data</h1>;
+function renderValue(value: unknown): string | number {
+    if (typeof value === 'number' || typeof value === 'string') return value;
+    return 'N/A';
 }
+
+// Define the render function as a regular function (not arrow)
+// This works better with reflection
+function renderBigNumber(dataFrame: Table, metric: Metric): React.ReactNode {
+    const metricColumn = metric.value;
+    const values = dataFrame.toArray() as DataRow[];
+
+    return (
+        <div>
+            {values.map((row, i) => (
+                <div key={i}>
+                    <h1>{renderValue(row[metricColumn])}</h1>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// This is it! The entire chart definition:
+export const BigNumber = createChart(
+    'Glyph Big Number',
+    renderBigNumber,
+    { description: 'Display a big number with a label' }
+);

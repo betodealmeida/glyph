@@ -1,2 +1,28 @@
+import "reflect-metadata";
+
+// Re-export types
+export type { ChartProps, IntOptions, ColorOptions, TemporalOptions } from './types';
+export { Argument, Metric, Dimension, Temporal, Int, Color, ColumnType } from './types';
+
+// Re-export chart creation
+export { createChart, registerArgumentClass } from './createChart';
+export type { GlyphChart, ChartMetadata, ChartRenderFn, CreateChartOptions } from './createChart';
+
+// Re-export Superset adapter
+export {
+    createSupersetPlugin,
+    makeChartPlugin,
+    getChartArguments,
+} from './interfaces/superset';
+export type {
+    GlyphChartMetadata,
+    SupersetChartProps,
+    ControlPanelConfig,
+    SupersetDeps,
+    PluginOptions,
+} from './interfaces/superset';
+
+// Re-export charts
 export { BigNumber } from './charts/BigNumber';
-export { Metric } from './types';
+export { FancyBigNumber } from './charts/FancyBigNumber';
+export { LineChart } from './charts/LineChart';
