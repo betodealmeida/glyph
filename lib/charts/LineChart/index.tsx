@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Table } from 'apache-arrow';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme } from '../../types';
+import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme, ChartHooks } from '../../types';
 import { createChart } from '../../createChart';
 
 // Color palette for multiple series
@@ -58,6 +58,8 @@ function renderLineChart(
     theme: GlyphTheme | undefined,
     width: number | undefined,
     height: number | undefined,
+    _hooks: ChartHooks | undefined,
+    _datasourceColumns: Array<{ name: string; type?: string; is_dttm?: boolean }> | undefined,
     time: Temporal,
     metric: Metric,
     groupBy?: Dimension
@@ -68,15 +70,20 @@ function renderLineChart(
     const chartWidth = width || 800;
     const chartHeight = height || 400;
 
+    const timeColumn = time?.value;
+    const metricColumn = metric?.value;
+
+    // Check if chart is configured
+    const isConfigured = timeColumn && timeColumn !== '__timestamp' &&
+                         metricColumn && metricColumn !== 'value';
+    const rows = dataFrame?.toArray() || [];
+    const hasData = rows.length > 0;
+
     useEffect(() => {
-        if (!containerRef.current || !dataFrame) return;
+        if (!containerRef.current || !dataFrame || !isConfigured || !hasData) return;
 
-        const timeColumn = time?.value || '__timestamp';
-        const metricColumn = metric?.value || 'value';
         const groupColumn = groupBy?.value;
-
         const rows = dataFrame.toArray();
-        if (rows.length === 0) return;
 
         let uplotData: uPlot.AlignedData;
         let series: uPlot.Series[];
@@ -219,7 +226,43 @@ function renderLineChart(
                 chartRef.current = null;
             }
         };
-    }, [dataFrame, time, metric, groupBy, currentTheme, chartWidth, chartHeight]);
+    }, [dataFrame, isConfigured, hasData, groupBy, currentTheme, chartWidth, chartHeight, timeColumn, metricColumn]);
+
+    // Show placeholder when not configured
+    if (!isConfigured) {
+        return (
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: chartWidth,
+                height: chartHeight,
+                color: '#999',
+                textAlign: 'center',
+            }}>
+                <div>
+                    <div>Select a time column and metric to display</div>
+                </div>
+            </div>
+        );
+    }
+
+    // Show placeholder when no data
+    if (!hasData) {
+        return (
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: chartWidth,
+                height: chartHeight,
+                color: '#999',
+                textAlign: 'center',
+            }}>
+                <div>No data available</div>
+            </div>
+        );
+    }
 
     return (
         <>

@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b ./tsconfig.build.json && vite build",
+    "watch": "tsc -b ./tsconfig.build.json --watch & vite build --watch",
     "prepare": "ts-patch install -s",
     "prepublishOnly": "npm run build",
     "lint": "eslint .",
@@ -18,6 +19,7 @@
   },
   "peerDependencies": {
     "react": "^18.3.1",
+    "react-dnd": "^11.1.3",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {

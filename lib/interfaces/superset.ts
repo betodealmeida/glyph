@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { tableFromArrays } from 'apache-arrow';
-import { Argument, ColumnType, Int, Color, GlyphTheme, defaultTheme } from '../types';
+import { Argument, ColumnType, Int, Color, GlyphTheme, defaultTheme, ChartHooks } from '../types';
 // Note: Temporal is handled via ColumnType.Temporal mapping, not direct import
 import { GlyphChart as CreateChartGlyphChart } from '../createChart';
 
@@ -28,12 +28,42 @@ export interface SupersetTheme {
     fontFamily?: string;
 }
 
+/**
+ * Superset datasource column metadata.
+ */
+export interface SupersetColumn {
+    column_name: string;
+    type?: string;
+    is_dttm?: boolean;
+    type_generic?: number;
+    groupby?: boolean;
+    filterable?: boolean;
+}
+
+/**
+ * Superset datasource metadata.
+ */
+export interface SupersetDatasource {
+    columns?: SupersetColumn[];
+    metrics?: Array<{ metric_name: string; label?: string }>;
+}
+
+/**
+ * Superset hooks for chart-to-form communication.
+ */
+export interface SupersetHooks {
+    setControlValue?: (controlName: string, value: unknown) => void;
+    onAddFilter?: (col: string, vals: unknown[], merge?: boolean, refresh?: boolean) => void;
+}
+
 export interface SupersetChartProps {
     width: number;
     height: number;
     formData: QueryFormData;
     queriesData: { data: Record<string, unknown>[] }[];
     theme?: SupersetTheme;
+    hooks?: SupersetHooks;
+    datasource?: SupersetDatasource;
 }
 
 /**
@@ -60,6 +90,8 @@ export interface ControlPanelConfig {
         expanded: boolean;
         controlSetRows: (string | { name: string; config: Record<string, unknown> })[][];
     }[];
+    controlOverrides?: Record<string, Record<string, unknown>>;
+    formDataOverrides?: (formData: QueryFormData) => QueryFormData;
 }
 
 /**
@@ -197,7 +229,6 @@ function getControlConfig(argClass: typeof Argument, paramName: string): Record<
 export function getChartArguments(chart: GlyphChart): Map<string, typeof Argument> {
     // Check for createChart format first (has chartArguments from reflection)
     if ('chartArguments' in chart && chart.chartArguments instanceof Map) {
-        console.log('[getChartArguments] Using chartArguments from createChart');
         return chart.chartArguments;
     }
 
@@ -206,7 +237,6 @@ export function getChartArguments(chart: GlyphChart): Map<string, typeof Argumen
     const legacyChart = chart as React.FC<unknown> & { metadata?: GlyphChartMetadata };
 
     if (legacyChart.metadata?.arguments) {
-        console.log('[getChartArguments] Using legacy metadata.arguments');
         for (const [name, argClass] of Object.entries(legacyChart.metadata.arguments)) {
             args.set(name, argClass);
         }
@@ -265,7 +295,24 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
         });
     }
 
-    return { controlPanelSections: sections };
+    // Remove validators from metric control to allow chart to render without selection
+    // This enables drag-and-drop onto the chart canvas
+    return {
+        controlPanelSections: sections,
+        controlOverrides: {
+            metric: {
+                validators: [],
+            },
+        },
+        // Allow empty queries so charts can render with drop zones before data is selected
+        formDataOverrides: (formData: QueryFormData) => ({
+            ...formData,
+            extras: {
+                ...(formData.extras as Record<string, unknown> || {}),
+                allow_empty_query: true,
+            },
+        }),
+    };
 }
 
 /**
@@ -275,10 +322,9 @@ function generateTransformProps(
     chart: GlyphChart
 ): (chartProps: SupersetChartProps) => Record<string, unknown> {
     const args = getChartArguments(chart);
-    console.log('[Glyph transformProps] chart args:', Array.from(args.entries()).map(([k, v]) => `${k}: ${v.name}`));
 
     return (chartProps: SupersetChartProps) => {
-        const { width, height, formData, queriesData, theme: supersetTheme } = chartProps;
+        const { width, height, formData, queriesData, theme: supersetTheme, hooks: supersetHooks, datasource } = chartProps;
         const data = queriesData[0]?.data || [];
 
         // Convert to Apache Arrow Table
@@ -294,12 +340,27 @@ function generateTransformProps(
         // Convert Superset theme to Glyph theme
         const theme = convertTheme(supersetTheme);
 
+        // Convert Superset hooks to Glyph hooks
+        const hooks: ChartHooks = {};
+        if (supersetHooks?.setControlValue) {
+            hooks.setControlValue = supersetHooks.setControlValue;
+        }
+        if (supersetHooks?.onAddFilter) {
+            hooks.onAddFilter = (col, vals, merge) => supersetHooks.onAddFilter!(col, vals, merge);
+        }
+
+        // Convert datasource columns to Glyph format
+        const datasourceColumns = datasource?.columns?.map(col => ({
+            name: col.column_name,
+            type: col.type,
+            is_dttm: col.is_dttm,
+        }));
+
         // Build props
-        const props: Record<string, unknown> = { dataFrame, theme, width, height };
+        const props: Record<string, unknown> = { dataFrame, theme, width, height, hooks, datasourceColumns };
 
         for (const [name, argClass] of args) {
             const control = getControlForArgument(argClass);
-            console.log(`[Glyph transformProps] Processing arg "${name}" with control "${control}"`);
 
             if (control === 'metric') {
                 // Check both metric (singular) and metrics (plural/array) from formData
@@ -349,6 +410,15 @@ function generateTransformProps(
 }
 
 /**
+ * Superset Behavior enum values used by Glyph.
+ * These match the values from @superset-ui/core Behavior enum.
+ */
+export const SupersetBehavior = {
+    InteractiveChart: 'INTERACTIVE_CHART',
+    AllowsEmptyResults: 'ALLOWS_EMPTY_RESULTS',
+} as const;
+
+/**
  * Superset dependencies passed to makeChartPlugin.
  * These come from @superset-ui/core in Superset.
  *
@@ -367,6 +437,7 @@ export interface SupersetDeps {
         category?: string;
         tags?: string[];
         thumbnail: string;
+        behaviors?: string[];
     }) => unknown;
     // Optional: buildQueryContext for proper query generation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -484,6 +555,12 @@ function generateBuildQuery(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const query: Record<string, any> = { ...baseQueryObject };
 
+            // Allow empty queries for drag-and-drop configuration
+            query.extras = {
+                ...(query.extras || {}),
+                allow_empty_query: true,
+            };
+
             // For charts with temporal axis, add x_axis as a BASE_AXIS column
             if (hasTemporal && formData.x_axis) {
                 const xAxisColumn = {
@@ -535,6 +612,8 @@ export function makeChartPlugin(
         category: meta.category || 'Glyph',
         tags: meta.tags || ['Glyph'],
         thumbnail: options.thumbnail,
+        // Enable AllowsEmptyResults so charts can render with drop zones before data is selected
+        behaviors: [SupersetBehavior.InteractiveChart, SupersetBehavior.AllowsEmptyResults],
     });
 
     const controlPanel = generateControlPanel(chart);

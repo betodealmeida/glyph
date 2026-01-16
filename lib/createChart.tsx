@@ -67,8 +67,11 @@ function extractArgumentsFromMetadata(
 
         for (const paramName of reflected.parameterNames) {
             // Skip built-in parameters (handled separately)
-            if (paramName === 'dataFrame' || paramName === 'theme' ||
-                paramName === 'width' || paramName === 'height') continue;
+            // Strip leading underscores for comparison (allows _hooks, _theme, etc.)
+            const normalizedName = paramName.replace(/^_+/, '');
+            if (normalizedName === 'dataFrame' || normalizedName === 'theme' ||
+                normalizedName === 'width' || normalizedName === 'height' ||
+                normalizedName === 'hooks' || normalizedName === 'datasourceColumns') continue;
 
             names.push(paramName);
 
@@ -195,13 +198,13 @@ export function createChart(
 
     // Create the React component
     function ChartComponent(props: ChartProps & Record<string, Argument>) {
-        const { dataFrame, theme, width, height, ...argProps } = props;
+        const { dataFrame, theme, width, height, hooks, datasourceColumns, ...argProps } = props;
 
         // Build argument array in parameter order
         const argValues = parameterNames.map(paramName => argProps[paramName]);
 
-        // Pass theme, width, height as arguments after dataFrame
-        return renderFn(dataFrame, theme, width, height, ...argValues);
+        // Pass built-in props then argument values
+        return renderFn(dataFrame, theme, width, height, hooks, datasourceColumns, ...argValues);
     }
 
     // Create a wrapper object that acts as the chart

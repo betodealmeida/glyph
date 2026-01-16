@@ -1,5 +1,5 @@
 import { Table, StructRow } from 'apache-arrow';
-import { Metric, GlyphTheme } from '../../types';
+import { Metric, GlyphTheme, ChartHooks } from '../../types';
 import { createChart } from '../../createChart';
 
 /**
@@ -25,10 +25,30 @@ function renderBigNumber(
     _theme: GlyphTheme | undefined,
     _width: number | undefined,
     _height: number | undefined,
+    _hooks: ChartHooks | undefined,
+    _datasourceColumns: Array<{ name: string; type?: string; is_dttm?: boolean }> | undefined,
     metric: Metric
 ): React.ReactNode {
-    const metricColumn = metric.value;
-    const values = dataFrame.toArray() as DataRow[];
+    const metricColumn = metric?.value;
+    const values = dataFrame?.toArray() as DataRow[] || [];
+
+    // Show placeholder when metric is not configured
+    if (!metricColumn || metricColumn === 'value') {
+        return (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
+                Select a metric to display
+            </div>
+        );
+    }
+
+    // Show placeholder when no data
+    if (values.length === 0) {
+        return (
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+                <h1 style={{ opacity: 0.5 }}>N/A</h1>
+            </div>
+        );
+    }
 
     return (
         <div>

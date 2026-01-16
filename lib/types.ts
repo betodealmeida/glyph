@@ -1,6 +1,38 @@
 import { Table } from 'apache-arrow';
 
 /**
+ * Drag-and-drop item types (generic, not platform-specific).
+ */
+export enum DragItemType {
+    Column = 'column',
+    Metric = 'metric',
+    Temporal = 'temporal',
+    Filter = 'filter',
+}
+
+/**
+ * A dragged item from the data source panel.
+ */
+export interface DragItem {
+    type: DragItemType;
+    name: string;
+    dataType?: 'numeric' | 'string' | 'temporal' | 'boolean' | 'unknown';
+    /** Platform-specific metadata (e.g., Superset's ColumnMeta) */
+    metadata?: unknown;
+}
+
+/**
+ * Hooks for chart-to-host communication.
+ * These allow charts to update form controls, add filters, etc.
+ */
+export interface ChartHooks {
+    /** Update a control value in the form */
+    setControlValue?: (controlName: string, value: unknown) => void;
+    /** Add a filter from chart interaction */
+    onAddFilter?: (column: string, values: unknown[], merge?: boolean) => void;
+}
+
+/**
  * Theme interface for Glyph charts.
  * Maps to Superset's theme properties.
  */
@@ -35,6 +67,10 @@ export interface ChartProps {
     theme?: GlyphTheme;
     width?: number;
     height?: number;
+    /** Hooks for communicating back to the host (e.g., Superset) */
+    hooks?: ChartHooks;
+    /** Available columns from the datasource (for DnD validation) */
+    datasourceColumns?: Array<{ name: string; type?: string; is_dttm?: boolean }>;
 }
 
 export enum ColumnType {
