@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Table } from 'apache-arrow';
 import { reflect, ReflectedClassRef } from 'typescript-rtti';
-import { Argument, Metric, Dimension, Int, Color, ChartProps } from './types';
+import { Argument, Metric, Dimension, Temporal, Int, Color, ChartProps } from './types';
 
 /**
  * Chart render function type.
@@ -28,7 +28,7 @@ export type GlyphChartProps = ChartProps & { [key: string]: Argument | ChartProp
  */
 export interface GlyphChart extends React.FC<GlyphChartProps> {
     metadata: ChartMetadata;
-    chartArguments: Map<string, typeof Argument>;  // Renamed from 'arguments'
+    chartArguments: Map<string, typeof Argument>;
     renderFn: ChartRenderFn;
 }
 
@@ -39,6 +39,7 @@ export interface GlyphChart extends React.FC<GlyphChartProps> {
 const ArgumentClassRegistry = new Map<string, typeof Argument>([
     ['Metric', Metric],
     ['Dimension', Dimension],
+    ['Temporal', Temporal],
     ['Int', Int],
     ['Color', Color],
     ['Argument', Argument],
@@ -63,7 +64,6 @@ function extractArgumentsFromMetadata(
 
     try {
         const reflected = reflect(renderFn);
-        console.log('[createChart] Reflected parameter names:', reflected.parameterNames);
 
         for (const paramName of reflected.parameterNames) {
             // Skip the dataFrame parameter
@@ -74,8 +74,6 @@ function extractArgumentsFromMetadata(
             const param = reflected.getParameter(paramName);
             const paramType = param.type;
 
-            console.log(`[createChart] Param ${paramName} type kind:`, paramType.kind);
-
             // Handle union types (e.g., Metric | undefined)
             const types = paramType.is('union') ? paramType.types : [paramType];
 
@@ -85,11 +83,8 @@ function extractArgumentsFromMetadata(
                     const classRef = type as ReflectedClassRef<unknown>;
                     const cls = classRef.reflectedClass?.class;
 
-                    console.log(`[createChart] Param ${paramName} class:`, cls?.name);
-
                     if (cls && (cls === Argument || cls.prototype instanceof Argument)) {
                         args.set(paramName, cls as typeof Argument);
-                        console.log(`[createChart] Found argument (direct): ${paramName} -> ${cls.name}`);
                         found = true;
                         break;
                     }
@@ -98,7 +93,6 @@ function extractArgumentsFromMetadata(
                     if (cls?.name && ArgumentClassRegistry.has(cls.name)) {
                         const registeredClass = ArgumentClassRegistry.get(cls.name)!;
                         args.set(paramName, registeredClass);
-                        console.log(`[createChart] Found argument (registry): ${paramName} -> ${registeredClass.name}`);
                         found = true;
                         break;
                     }
@@ -109,7 +103,6 @@ function extractArgumentsFromMetadata(
                 if (typeName && ArgumentClassRegistry.has(typeName)) {
                     const registeredClass = ArgumentClassRegistry.get(typeName)!;
                     args.set(paramName, registeredClass);
-                    console.log(`[createChart] Found argument (by name): ${paramName} -> ${registeredClass.name}`);
                     found = true;
                     break;
                 }
@@ -117,11 +110,9 @@ function extractArgumentsFromMetadata(
 
             // Fallback: Try to infer from parameter name (convention-based)
             if (!found) {
-                // Check if parameter name matches a known argument class (case-insensitive)
                 for (const [className, argClass] of ArgumentClassRegistry) {
                     if (paramName.toLowerCase().includes(className.toLowerCase())) {
                         args.set(paramName, argClass);
-                        console.log(`[createChart] Found argument (by convention): ${paramName} -> ${argClass.name}`);
                         found = true;
                         break;
                     }
@@ -131,18 +122,34 @@ function extractArgumentsFromMetadata(
             // Additional fallback: common parameter name patterns
             if (!found) {
                 const paramLower = paramName.toLowerCase();
+                // Temporal patterns -> Temporal
+                if (paramLower.includes('time') || paramLower.includes('date') ||
+                    paramLower.includes('temporal') || paramLower === 'x' || paramLower === 'xaxis') {
+                    args.set(paramName, Temporal);
+                    found = true;
+                }
+                // Metric patterns -> Metric
+                else if (paramLower.includes('metric') || paramLower.includes('value') ||
+                         paramLower.includes('measure') || paramLower === 'y' || paramLower === 'yaxis') {
+                    args.set(paramName, Metric);
+                    found = true;
+                }
+                // Dimension/groupby patterns -> Dimension
+                else if (paramLower.includes('group') || paramLower.includes('dimension') ||
+                         paramLower.includes('category') || paramLower.includes('series')) {
+                    args.set(paramName, Dimension);
+                    found = true;
+                }
                 // Size/font size patterns -> Int
-                if (paramLower.includes('size') || paramLower.includes('width') ||
+                else if (paramLower.includes('size') || paramLower.includes('width') ||
                     paramLower.includes('height') || paramLower.includes('font')) {
                     args.set(paramName, Int);
-                    console.log(`[createChart] Found argument (by pattern): ${paramName} -> Int`);
                     found = true;
                 }
                 // Color patterns
                 else if (paramLower.includes('color') || paramLower.includes('colour') ||
                          paramLower.includes('fill') || paramLower.includes('stroke')) {
                     args.set(paramName, Color);
-                    console.log(`[createChart] Found argument (by pattern): ${paramName} -> Color`);
                     found = true;
                 }
             }
@@ -161,16 +168,6 @@ export interface CreateChartOptions extends Partial<ChartMetadata> {
     /**
      * Explicit argument class mapping. Use this to specify custom Field() classes
      * that can't be discovered via reflection.
-     *
-     * @example
-     * ```typescript
-     * const FontSize = Field(Int, { label: 'Font Size', min: 12, max: 200 });
-     * type FontSize = Int;
-     *
-     * createChart('My Chart', renderFn, {
-     *     arguments: { size: FontSize }
-     * });
-     * ```
      */
     arguments?: Record<string, typeof Argument>;
 }
@@ -192,20 +189,15 @@ export function createChart(
     if (options?.arguments) {
         for (const [paramName, argClass] of Object.entries(options.arguments)) {
             extractedArgs.set(paramName, argClass);
-            console.log(`[createChart] Override argument: ${paramName} -> ${argClass.name || 'CustomField'}`);
         }
     }
 
-    console.log(`[createChart] ${name} - final arguments:`, Array.from(extractedArgs.keys()));
-
-    // Create the React component as a plain object first, then add function behavior
+    // Create the React component
     function ChartComponent(props: ChartProps & Record<string, Argument>) {
         const { dataFrame, ...argProps } = props;
 
-        // Build argument array in parameter order (preserve order, don't filter)
+        // Build argument array in parameter order
         const argValues = parameterNames.map(paramName => argProps[paramName]);
-
-        console.log('[ChartComponent] Rendering with args:', parameterNames, argValues);
 
         return renderFn(dataFrame, ...argValues);
     }
@@ -213,7 +205,6 @@ export function createChart(
     // Create a wrapper object that acts as the chart
     const Chart = ChartComponent as unknown as GlyphChart;
 
-    // Use Object.defineProperty to avoid strict mode issues with 'arguments'
     Object.defineProperty(Chart, 'metadata', {
         value: {
             name,

@@ -42,6 +42,7 @@
     "apache-arrow": "^18.0.0",
     "reflect-metadata": "^0.1.14",
     "typescript-rtti": "^0.9.6",
-    "typia": "^11.0.0"
+    "typia": "^11.0.0",
+    "uplot": "^1.6.32"
   }
 }

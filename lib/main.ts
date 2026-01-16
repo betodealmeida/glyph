@@ -1,8 +1,8 @@
 import "reflect-metadata";
 
 // Re-export types
-export type { ChartProps, IntOptions, ColorOptions } from './types';
-export { Argument, Metric, Dimension, Int, Color, ColumnType } from './types';
+export type { ChartProps, IntOptions, ColorOptions, TemporalOptions } from './types';
+export { Argument, Metric, Dimension, Temporal, Int, Color, ColumnType } from './types';
 
 // Re-export chart creation
 export { createChart, registerArgumentClass } from './createChart';
@@ -25,3 +25,4 @@ export type {
 // Re-export charts
 export { BigNumber } from './charts/BigNumber';
 export { FancyBigNumber } from './charts/FancyBigNumber';
+export { LineChart } from './charts/LineChart';

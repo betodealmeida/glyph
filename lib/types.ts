@@ -10,6 +10,7 @@ export interface ChartProps {
 export enum ColumnType {
     Metric = 'metric',
     Dimension = 'dimension',
+    Temporal = 'temporal',
     Argument = 'argument',
 }
 
@@ -37,6 +38,47 @@ export class Dimension extends Argument {
     static override types: ColumnType[] = [ColumnType.Dimension];
     static override label = 'Dimension';
     static override description = 'A categorical column for grouping data';
+
+    /**
+     * Create a configured Dimension type.
+     */
+    static with(options: { label?: string; description?: string }): typeof Dimension {
+        const Base = this;
+        return class extends Base {
+            static override label = options.label ?? Base.label;
+            static override description = options.description ?? Base.description;
+        };
+    }
+}
+
+export interface TemporalOptions {
+    label?: string;
+    description?: string;
+}
+
+export class Temporal extends Argument {
+    static override types: ColumnType[] = [ColumnType.Temporal];
+    static override label: string | null = 'Time Column';
+    static override description: string | null = 'A temporal column for time series data';
+
+    constructor(value: string) {
+        super(value);
+    }
+
+    /**
+     * Create a configured Temporal type.
+     * @example
+     * ```typescript
+     * class TimeAxis extends Temporal.with({ label: 'Time' }) {}
+     * ```
+     */
+    static with(options: TemporalOptions): typeof Temporal {
+        const Base = this;
+        return class extends Base {
+            static override label = options.label ?? Base.label;
+            static override description = options.description ?? Base.description;
+        };
+    }
 }
 
 /**

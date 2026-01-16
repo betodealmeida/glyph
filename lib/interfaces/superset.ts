@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { tableFromArrays } from 'apache-arrow';
 import { Argument, ColumnType, Int, Color } from '../types';
+// Note: Temporal is handled via ColumnType.Temporal mapping, not direct import
 import { GlyphChart as CreateChartGlyphChart } from '../createChart';
 
 /**
@@ -92,6 +93,7 @@ function rgbaToHex(rgba: RgbaColor): string {
 const COLUMN_TYPE_TO_CONTROL: Record<ColumnType, string> = {
     [ColumnType.Metric]: 'metric',
     [ColumnType.Dimension]: 'groupby',
+    [ColumnType.Temporal]: 'granularity_sqla',  // Superset's time column control
     [ColumnType.Argument]: 'TextControl',
 };
 
@@ -189,6 +191,7 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
     const args = getChartArguments(chart);
     const queryControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
     const customizeControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
+    let hasTemporalArg = false;
 
     for (const [paramName, argClass] of args) {
         const control = getControlForArgument(argClass);
@@ -196,6 +199,9 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
         if (control === 'metric' || control === 'groupby') {
             // Data controls go in Query section
             queryControls.push([control]);
+        } else if (control === 'granularity_sqla') {
+            // Temporal control - add x_axis and time_grain_sqla
+            hasTemporalArg = true;
         } else {
             // Style controls (Int, Color, etc.) go in Customize section
             customizeControls.push([{
@@ -203,6 +209,11 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
                 config: getControlConfig(argClass, paramName),
             }]);
         }
+    }
+
+    // Add temporal controls at the beginning if chart has temporal argument
+    if (hasTemporalArg) {
+        queryControls.unshift(['x_axis'], ['time_grain_sqla']);
     }
 
     queryControls.push(['adhoc_filters']);
@@ -255,7 +266,8 @@ function generateTransformProps(
             const control = getControlForArgument(argClass);
 
             if (control === 'metric') {
-                const metricValue = formData.metric;
+                // Check both metric (singular) and metrics (plural/array) from formData
+                const metricValue = formData.metric || (formData.metrics && formData.metrics[0]);
                 const metricLabel = typeof metricValue === 'string'
                     ? metricValue
                     : metricValue?.label || 'value';
@@ -263,6 +275,11 @@ function generateTransformProps(
             } else if (control === 'groupby') {
                 const groupby = formData.groupby || formData.columns || [];
                 props[name] = new argClass(groupby[0] || '');
+            } else if (control === 'granularity_sqla') {
+                // Temporal control - get time column from xAxis/x_axis (modern) or granularity_sqla (legacy)
+                // Note: Superset converts snake_case to camelCase when passing formData to components
+                const timeColumn = formData.xAxis || formData.x_axis || formData.granularity_sqla || '__timestamp';
+                props[name] = new argClass(String(timeColumn));
             } else if (control === 'SliderControl') {
                 // Int control - get value from formData
                 const value = formData[name] ?? (argClass as typeof Int).default ?? 32;
@@ -368,7 +385,35 @@ function getVisualizationOnlyParams(chart: GlyphChart): Set<string> {
 }
 
 /**
- * Generate a buildQuery function that filters out visualization-only controls.
+ * Check if a chart has a Temporal argument.
+ */
+function hasTemporalArgument(chart: GlyphChart): boolean {
+    const args = getChartArguments(chart);
+    for (const [, argClass] of args) {
+        const control = getControlForArgument(argClass);
+        if (control === 'granularity_sqla') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Check if a chart has a Dimension (groupby) argument.
+ */
+function hasDimensionArgument(chart: GlyphChart): boolean {
+    const args = getChartArguments(chart);
+    for (const [, argClass] of args) {
+        const control = getControlForArgument(argClass);
+        if (control === 'groupby') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Generate a buildQuery function that properly configures the query for the chart type.
  */
 function generateBuildQuery(
     chart: GlyphChart,
@@ -377,6 +422,8 @@ function generateBuildQuery(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): (formData: any) => any {
     const vizOnlyParams = getVisualizationOnlyParams(chart);
+    const hasTemporal = hasTemporalArgument(chart);
+    const hasDimension = hasDimensionArgument(chart);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (formData: any) => {
@@ -397,11 +444,32 @@ function generateBuildQuery(
             );
         }
 
-        return buildQueryContext(cleanedFormData, baseQueryObject => [
-            {
-                ...baseQueryObject,
-            },
-        ]);
+        return buildQueryContext(cleanedFormData, baseQueryObject => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const query: Record<string, any> = { ...baseQueryObject };
+
+            // For charts with temporal axis, add x_axis as a BASE_AXIS column
+            if (hasTemporal && formData.x_axis) {
+                const xAxisColumn = {
+                    columnType: 'BASE_AXIS',
+                    sqlExpression: formData.x_axis,
+                    label: formData.x_axis,
+                    expressionType: 'SQL',
+                    isColumnReference: true,
+                };
+
+                // Ensure columns array exists and add x_axis at the beginning
+                const existingColumns = query.columns || [];
+                query.columns = [xAxisColumn, ...existingColumns];
+
+                // For charts with both temporal and dimension, set up series_columns
+                if (hasDimension && formData.groupby && formData.groupby.length > 0) {
+                    query.series_columns = formData.groupby;
+                }
+            }
+
+            return [query];
+        });
     };
 }
 
