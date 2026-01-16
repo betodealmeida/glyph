@@ -1,5 +1,5 @@
 import { Table, StructRow } from 'apache-arrow';
-import { Metric, Int, Color } from '../../types';
+import { Metric, Int, Color, GlyphTheme } from '../../types';
 import { createChart } from '../../createChart';
 
 interface DataRow extends StructRow {
@@ -23,13 +23,11 @@ class FontColor extends Color.with({ label: 'Font Color', default: '#1f77b4' }) 
  */
 function renderFancyBigNumber(
     dataFrame: Table,
+    _theme: GlyphTheme | undefined,
     metric: Metric,
     size: FontSize,
     color: FontColor
 ): React.ReactNode {
-    // Debug: log what we received
-    console.log('[FancyBigNumber] Props received:', { metric, size, color });
-
     // Handle undefined arguments gracefully
     const metricColumn = metric?.value || 'value';
     const fontSize = size?.numericValue ?? 48;

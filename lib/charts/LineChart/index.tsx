@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Table } from 'apache-arrow';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { Metric, Temporal, Dimension } from '../../types';
+import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme } from '../../types';
 import { createChart } from '../../createChart';
 
 // Color palette for multiple series
@@ -55,12 +55,18 @@ function toTimestamp(value: unknown): number {
  */
 function renderLineChart(
     dataFrame: Table,
+    theme: GlyphTheme | undefined,
     time: Temporal,
     metric: Metric,
     groupBy?: Dimension
 ): React.ReactNode {
+    console.log('[LineChart] theme:', theme);
+    console.log('[LineChart] dataFrame:', dataFrame);
+    console.log('[LineChart] time:', time);
+    console.log('[LineChart] metric:', metric);
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<uPlot | null>(null);
+    const currentTheme = theme || defaultTheme;
 
     useEffect(() => {
         if (!containerRef.current || !dataFrame) return;
@@ -175,9 +181,18 @@ function renderLineChart(
                 x: { time: true },
             },
             axes: [
-                {},
+                {
+                    stroke: currentTheme.colors.text,
+                    grid: { stroke: currentTheme.colors.gridLine },
+                    ticks: { stroke: currentTheme.colors.border },
+                    font: `12px ${currentTheme.fontFamily}`,
+                },
                 {
                     label: metric?.value || 'Value',
+                    stroke: currentTheme.colors.text,
+                    grid: { stroke: currentTheme.colors.gridLine },
+                    ticks: { stroke: currentTheme.colors.border },
+                    font: `12px ${currentTheme.fontFamily}`,
                 },
             ],
             legend: {
@@ -204,7 +219,7 @@ function renderLineChart(
                 chartRef.current = null;
             }
         };
-    }, [dataFrame, time, metric, groupBy]);
+    }, [dataFrame, time, metric, groupBy, currentTheme]);
 
     return (
         <>
