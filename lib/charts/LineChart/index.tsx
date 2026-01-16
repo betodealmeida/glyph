@@ -247,6 +247,32 @@ function renderLineChart(
                     width: 100% !important;
                     height: 100% !important;
                 }
+                .glyph-line-chart .u-legend {
+                    position: absolute;
+                    top: 8px;
+                    right: 8px;
+                    background: ${currentTheme.colors.background}cc;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-family: ${currentTheme.fontFamily};
+                    color: ${currentTheme.colors.text};
+                    z-index: 10;
+                }
+                .glyph-line-chart .u-legend .u-series {
+                    display: inline-block;
+                    margin-right: 12px;
+                }
+                .glyph-line-chart .u-legend .u-marker {
+                    width: 12px;
+                    height: 3px;
+                    display: inline-block;
+                    margin-right: 4px;
+                    vertical-align: middle;
+                }
+                .glyph-line-chart .u-legend .u-label {
+                    vertical-align: middle;
+                }
             `}</style>
             <div
                 ref={containerRef}
