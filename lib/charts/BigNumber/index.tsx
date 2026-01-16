@@ -20,7 +20,13 @@ function renderValue(value: unknown): string | number {
 
 // Define the render function as a regular function (not arrow)
 // This works better with reflection
-function renderBigNumber(dataFrame: Table, _theme: GlyphTheme | undefined, metric: Metric): React.ReactNode {
+function renderBigNumber(
+    dataFrame: Table,
+    _theme: GlyphTheme | undefined,
+    _width: number | undefined,
+    _height: number | undefined,
+    metric: Metric
+): React.ReactNode {
     const metricColumn = metric.value;
     const values = dataFrame.toArray() as DataRow[];
 

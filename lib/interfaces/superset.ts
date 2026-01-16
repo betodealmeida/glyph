@@ -278,10 +278,7 @@ function generateTransformProps(
     console.log('[Glyph transformProps] chart args:', Array.from(args.entries()).map(([k, v]) => `${k}: ${v.name}`));
 
     return (chartProps: SupersetChartProps) => {
-        const { formData, queriesData, theme: supersetTheme } = chartProps;
-        console.log('[Glyph transformProps] formData:', formData);
-        console.log('[Glyph transformProps] formData.xAxis:', formData.xAxis);
-        console.log('[Glyph transformProps] formData.x_axis:', formData.x_axis);
+        const { width, height, formData, queriesData, theme: supersetTheme } = chartProps;
         const data = queriesData[0]?.data || [];
 
         // Convert to Apache Arrow Table
@@ -298,7 +295,7 @@ function generateTransformProps(
         const theme = convertTheme(supersetTheme);
 
         // Build props
-        const props: Record<string, unknown> = { dataFrame, theme };
+        const props: Record<string, unknown> = { dataFrame, theme, width, height };
 
         for (const [name, argClass] of args) {
             const control = getControlForArgument(argClass);

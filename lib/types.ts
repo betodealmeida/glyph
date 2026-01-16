@@ -33,6 +33,8 @@ export const defaultTheme: GlyphTheme = {
 export interface ChartProps {
     dataFrame: Table;
     theme?: GlyphTheme;
+    width?: number;
+    height?: number;
 }
 
 export enum ColumnType {

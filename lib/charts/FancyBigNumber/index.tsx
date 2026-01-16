@@ -24,6 +24,8 @@ class FontColor extends Color.with({ label: 'Font Color', default: '#1f77b4' }) 
 function renderFancyBigNumber(
     dataFrame: Table,
     _theme: GlyphTheme | undefined,
+    _width: number | undefined,
+    _height: number | undefined,
     metric: Metric,
     size: FontSize,
     color: FontColor
