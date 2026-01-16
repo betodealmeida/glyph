@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { tableFromArrays } from 'apache-arrow';
-import { Argument, ColumnType, Int, Color } from '../types';
+import { Argument, ColumnType, Int, Color, GlyphTheme, defaultTheme } from '../types';
 // Note: Temporal is handled via ColumnType.Temporal mapping, not direct import
 import { GlyphChart as CreateChartGlyphChart } from '../createChart';
 
@@ -16,11 +16,42 @@ export interface QueryFormData {
     columns?: string[];
 }
 
+/**
+ * Superset theme interface (subset of SupersetTheme from @superset-ui/core).
+ */
+export interface SupersetTheme {
+    colorText?: string;
+    colorTextTertiary?: string;
+    colorBgContainer?: string;
+    colorBorder?: string;
+    colorBorderSecondary?: string;
+    fontFamily?: string;
+}
+
 export interface SupersetChartProps {
     width: number;
     height: number;
     formData: QueryFormData;
     queriesData: { data: Record<string, unknown>[] }[];
+    theme?: SupersetTheme;
+}
+
+/**
+ * Convert Superset theme to Glyph theme.
+ */
+function convertTheme(supersetTheme?: SupersetTheme): GlyphTheme {
+    if (!supersetTheme) {
+        return defaultTheme;
+    }
+    return {
+        colors: {
+            text: supersetTheme.colorText || defaultTheme.colors.text,
+            background: supersetTheme.colorBgContainer || defaultTheme.colors.background,
+            border: supersetTheme.colorBorder || defaultTheme.colors.border,
+            gridLine: supersetTheme.colorBorderSecondary || defaultTheme.colors.gridLine,
+        },
+        fontFamily: supersetTheme.fontFamily || defaultTheme.fontFamily,
+    };
 }
 
 export interface ControlPanelConfig {
@@ -244,9 +275,10 @@ function generateTransformProps(
     chart: GlyphChart
 ): (chartProps: SupersetChartProps) => Record<string, unknown> {
     const args = getChartArguments(chart);
+    console.log('[Glyph transformProps] chart args:', Array.from(args.entries()).map(([k, v]) => `${k}: ${v.name}`));
 
     return (chartProps: SupersetChartProps) => {
-        const { formData, queriesData } = chartProps;
+        const { width, height, formData, queriesData, theme: supersetTheme } = chartProps;
         const data = queriesData[0]?.data || [];
 
         // Convert to Apache Arrow Table
@@ -259,11 +291,15 @@ function generateTransformProps(
         }
         const dataFrame = tableFromArrays(columns);
 
+        // Convert Superset theme to Glyph theme
+        const theme = convertTheme(supersetTheme);
+
         // Build props
-        const props: Record<string, unknown> = { dataFrame };
+        const props: Record<string, unknown> = { dataFrame, theme, width, height };
 
         for (const [name, argClass] of args) {
             const control = getControlForArgument(argClass);
+            console.log(`[Glyph transformProps] Processing arg "${name}" with control "${control}"`);
 
             if (control === 'metric') {
                 // Check both metric (singular) and metrics (plural/array) from formData

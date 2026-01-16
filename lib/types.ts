@@ -1,10 +1,40 @@
 import { Table } from 'apache-arrow';
 
+/**
+ * Theme interface for Glyph charts.
+ * Maps to Superset's theme properties.
+ */
+export interface GlyphTheme {
+    colors: {
+        text: string;
+        background: string;
+        border: string;
+        gridLine: string;
+    };
+    fontFamily: string;
+}
+
+/**
+ * Default theme (light mode).
+ */
+export const defaultTheme: GlyphTheme = {
+    colors: {
+        text: '#333333',
+        background: '#ffffff',
+        border: '#cccccc',
+        gridLine: '#e0e0e0',
+    },
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+};
+
 /*
  * Base interface for all chart components.
  */
 export interface ChartProps {
     dataFrame: Table;
+    theme?: GlyphTheme;
+    width?: number;
+    height?: number;
 }
 
 export enum ColumnType {

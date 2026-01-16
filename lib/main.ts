@@ -1,8 +1,8 @@
 import "reflect-metadata";
 
 // Re-export types
-export type { ChartProps, IntOptions, ColorOptions, TemporalOptions } from './types';
-export { Argument, Metric, Dimension, Temporal, Int, Color, ColumnType } from './types';
+export type { ChartProps, IntOptions, ColorOptions, TemporalOptions, GlyphTheme } from './types';
+export { Argument, Metric, Dimension, Temporal, Int, Color, ColumnType, defaultTheme } from './types';
 
 // Re-export chart creation
 export { createChart, registerArgumentClass } from './createChart';

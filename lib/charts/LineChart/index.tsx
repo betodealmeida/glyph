@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Table } from 'apache-arrow';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { Metric, Temporal, Dimension } from '../../types';
+import { Metric, Temporal, Dimension, GlyphTheme, defaultTheme } from '../../types';
 import { createChart } from '../../createChart';
 
 // Color palette for multiple series
@@ -55,12 +55,18 @@ function toTimestamp(value: unknown): number {
  */
 function renderLineChart(
     dataFrame: Table,
+    theme: GlyphTheme | undefined,
+    width: number | undefined,
+    height: number | undefined,
     time: Temporal,
     metric: Metric,
     groupBy?: Dimension
 ): React.ReactNode {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<uPlot | null>(null);
+    const currentTheme = theme || defaultTheme;
+    const chartWidth = width || 800;
+    const chartHeight = height || 400;
 
     useEffect(() => {
         if (!containerRef.current || !dataFrame) return;
@@ -168,25 +174,34 @@ function renderLineChart(
         }
 
         const opts: uPlot.Options = {
-            width: containerRef.current.clientWidth,
-            height: containerRef.current.clientHeight,
+            width: chartWidth,
+            height: chartHeight,
             series,
             scales: {
                 x: { time: true },
             },
             axes: [
-                {},
+                {
+                    stroke: currentTheme.colors.text,
+                    grid: { stroke: currentTheme.colors.gridLine },
+                    ticks: { stroke: currentTheme.colors.border },
+                    font: `12px ${currentTheme.fontFamily}`,
+                },
                 {
                     label: metric?.value || 'Value',
+                    stroke: currentTheme.colors.text,
+                    grid: { stroke: currentTheme.colors.gridLine },
+                    ticks: { stroke: currentTheme.colors.border },
+                    font: `12px ${currentTheme.fontFamily}`,
                 },
             ],
             legend: {
-                show: false,
+                show: true,
             },
         };
 
-        // Don't create chart if container has no size
-        if (containerRef.current.clientWidth === 0 || containerRef.current.clientHeight === 0) {
+        // Don't create chart if dimensions are invalid
+        if (chartWidth === 0 || chartHeight === 0) {
             return;
         }
 
@@ -204,7 +219,7 @@ function renderLineChart(
                 chartRef.current = null;
             }
         };
-    }, [dataFrame, time, metric, groupBy]);
+    }, [dataFrame, time, metric, groupBy, currentTheme, chartWidth, chartHeight]);
 
     return (
         <>
@@ -237,8 +252,8 @@ function renderLineChart(
                 ref={containerRef}
                 className="glyph-line-chart"
                 style={{
-                    width: '100%',
-                    height: 400,
+                    width: chartWidth,
+                    height: chartHeight,
                     overflow: 'hidden',
                     position: 'relative',
                 }}
