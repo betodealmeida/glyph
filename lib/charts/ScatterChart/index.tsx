@@ -354,6 +354,7 @@ function ScatterChartWithDnD(props: ChartProps & Record<string, unknown>): React
                             theme={currentTheme}
                             vertical
                             pending={!!pending.yAxis}
+                            style={{ flex: 1 }}
                         />
                     ) : (
                         <DropZone
@@ -593,6 +594,7 @@ function ScatterChartWithDropOverlays({
 
 /**
  * Display a configured slot.
+ * Shows green immediately when a value is set (even if pending confirmation).
  */
 function ConfiguredSlot({
     label,
@@ -609,14 +611,14 @@ function ConfiguredSlot({
     style?: React.CSSProperties;
     pending?: boolean;
 }): React.ReactElement {
-    const borderColor = pending ? theme.colors.border : '#52c41a';
-    const valueColor = pending ? theme.colors.text : '#52c41a';
+    // Always show green when we have a value - it's fulfilled from user's perspective
+    const accentColor = '#52c41a';
 
     return (
         <div style={{
             padding: vertical ? '16px 8px' : '12px 16px',
-            backgroundColor: theme.colors.background,
-            border: `2px solid ${borderColor}`,
+            backgroundColor: pending ? 'rgba(82, 196, 26, 0.05)' : 'rgba(82, 196, 26, 0.1)',
+            border: `2px solid ${accentColor}`,
             borderRadius: '8px',
             textAlign: 'center',
             display: 'flex',
@@ -641,7 +643,7 @@ function ConfiguredSlot({
             <div style={{
                 fontSize: '14px',
                 fontWeight: 600,
-                color: valueColor,
+                color: accentColor,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -656,7 +658,7 @@ function ConfiguredSlot({
                     opacity: 0.5,
                     marginTop: '4px',
                 }}>
-                    (pending)
+                    click Update Chart
                 </div>
             )}
         </div>
