@@ -324,7 +324,13 @@ function ScatterChartWithDnD(props: ChartProps & Record<string, unknown>): React
     };
 
     // Show drop zone configuration when not fully configured
-    if (!isFullyConfigured && !pending.xAxis && !pending.yAxis && !pending.metric) {
+    // Keep showing individual drop zones until ALL are configured
+    if (!isFullyConfigured) {
+        // Determine effective values (pending or configured)
+        const effectiveX = pending.xAxis || (isXConfigured ? xValue : null);
+        const effectiveY = pending.yAxis || (isYConfigured ? yValue : null);
+        const effectiveMetric = pending.metric || (isMetricConfigured ? metricValue : null);
+
         return (
             <div style={{
                 display: 'flex',
@@ -341,12 +347,13 @@ function ScatterChartWithDnD(props: ChartProps & Record<string, unknown>): React
                     width: '80px',
                     gap: '8px',
                 }}>
-                    {isYConfigured ? (
+                    {effectiveY ? (
                         <ConfiguredSlot
                             label="Y"
-                            value={yValue}
+                            value={effectiveY}
                             theme={currentTheme}
                             vertical
+                            pending={!!pending.yAxis}
                         />
                     ) : (
                         <DropZone
@@ -374,12 +381,13 @@ function ScatterChartWithDnD(props: ChartProps & Record<string, unknown>): React
                 }}>
                     {/* Metric drop zone - main chart area (bubble size) */}
                     <div style={{ flex: 1 }}>
-                        {isMetricConfigured ? (
+                        {effectiveMetric ? (
                             <ConfiguredSlot
                                 label="Metric"
-                                value={metricValue}
+                                value={effectiveMetric}
                                 theme={currentTheme}
                                 style={{ height: '100%' }}
+                                pending={!!pending.metric}
                             />
                         ) : (
                             <DropZone
@@ -395,11 +403,12 @@ function ScatterChartWithDnD(props: ChartProps & Record<string, unknown>): React
 
                     {/* X Axis drop zone - bottom */}
                     <div style={{ height: '60px' }}>
-                        {isXConfigured ? (
+                        {effectiveX ? (
                             <ConfiguredSlot
                                 label="X"
-                                value={xValue}
+                                value={effectiveX}
                                 theme={currentTheme}
+                                pending={!!pending.xAxis}
                             />
                         ) : (
                             <DropZone
@@ -411,47 +420,6 @@ function ScatterChartWithDnD(props: ChartProps & Record<string, unknown>): React
                                 style={{ height: '100%' }}
                             />
                         )}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // Show pending state
-    if ((pending.xAxis || pending.yAxis || pending.metric) && !isFullyConfigured) {
-        return (
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: chartHeight,
-                width: chartWidth,
-                gap: '12px',
-            }}>
-                <div style={{
-                    padding: '16px 24px',
-                    backgroundColor: currentTheme.colors.background,
-                    border: `2px solid ${currentTheme.colors.border}`,
-                    borderRadius: '8px',
-                    textAlign: 'center',
-                }}>
-                    <div style={{
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        color: currentTheme.colors.text,
-                        marginBottom: '8px',
-                    }}>
-                        {pending.xAxis && <div>X: {pending.xAxis}</div>}
-                        {pending.yAxis && <div>Y: {pending.yAxis}</div>}
-                        {pending.metric && <div>Metric: {pending.metric}</div>}
-                    </div>
-                    <div style={{
-                        fontSize: '12px',
-                        color: currentTheme.colors.text,
-                        opacity: 0.6,
-                    }}>
-                        Click "Update chart" to load data
                     </div>
                 </div>
             </div>
@@ -632,18 +600,23 @@ function ConfiguredSlot({
     theme,
     vertical,
     style,
+    pending,
 }: {
     label: string;
     value: string;
     theme: GlyphTheme;
     vertical?: boolean;
     style?: React.CSSProperties;
+    pending?: boolean;
 }): React.ReactElement {
+    const borderColor = pending ? theme.colors.border : '#52c41a';
+    const valueColor = pending ? theme.colors.text : '#52c41a';
+
     return (
         <div style={{
             padding: vertical ? '16px 8px' : '12px 16px',
             backgroundColor: theme.colors.background,
-            border: `2px solid #52c41a`,
+            border: `2px solid ${borderColor}`,
             borderRadius: '8px',
             textAlign: 'center',
             display: 'flex',
@@ -668,7 +641,7 @@ function ConfiguredSlot({
             <div style={{
                 fontSize: '14px',
                 fontWeight: 600,
-                color: '#52c41a',
+                color: valueColor,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -676,6 +649,16 @@ function ConfiguredSlot({
             }}>
                 {value}
             </div>
+            {pending && (
+                <div style={{
+                    fontSize: '10px',
+                    color: theme.colors.text,
+                    opacity: 0.5,
+                    marginTop: '4px',
+                }}>
+                    (pending)
+                </div>
+            )}
         </div>
     );
 }

@@ -285,26 +285,29 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
             // Use standard metric control
             queryControls.push(['metric']);
         } else if (control === 'groupby') {
-            // For Dimension parameters, create a custom single-column selector
-            // Using 'entity' control type which is a single-column DnD-enabled selector
+            // For Dimension parameters, create a DnD-enabled column selector
+            // Using DndColumnSelect which supports drag-and-drop from the data panel
             queryControls.push([{
                 name: paramName,
                 config: {
-                    type: 'SelectControl',
+                    type: 'DndColumnSelect',
                     label: formatParamLabel(paramName),
                     description: argClass.description || `Select a column for ${formatParamLabel(paramName)}`,
                     multi: false,
-                    freeForm: true,
-                    allowAll: true,
-                    commaChoosesOption: false,
-                    optionRenderer: (c: unknown) => c,
-                    valueRenderer: (c: unknown) => c,
-                    valueKey: 'column_name',
-                    mapStateToProps: (state: Record<string, unknown>) => {
-                        const datasource = state.datasource as SupersetDatasource | undefined;
+                    canDelete: true,
+                    ghostButtonText: `Drop a column here`,
+                    mapStateToProps: (
+                        { datasource }: { datasource: SupersetDatasource | undefined },
+                        controlState: { value: unknown }
+                    ) => {
                         const columns = datasource?.columns || [];
                         return {
-                            choices: columns.map((col: SupersetColumn) => [col.column_name, col.column_name]),
+                            options: columns.map((col: SupersetColumn) => ({
+                                column_name: col.column_name,
+                                verbose_name: col.column_name,
+                                type: col.type,
+                            })),
+                            value: controlState?.value,
                         };
                     },
                     validators: [],

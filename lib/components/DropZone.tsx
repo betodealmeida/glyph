@@ -161,7 +161,9 @@ export function DropZone({
     if (isActive) {
         baseStyle.borderColor = '#52c41a'; // green
         baseStyle.backgroundColor = 'rgba(82, 196, 26, 0.1)';
-        baseStyle.transform = 'scale(1.02)';
+        // Preserve existing transform and add scale
+        const existingTransform = style?.transform || '';
+        baseStyle.transform = existingTransform ? `${existingTransform} scale(1.02)` : 'scale(1.02)';
     } else if (isRejected) {
         baseStyle.borderColor = '#ff4d4f'; // red
         baseStyle.backgroundColor = 'rgba(255, 77, 79, 0.1)';
