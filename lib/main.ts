@@ -30,3 +30,4 @@ export type {
 export { BigNumber } from './charts/BigNumber';
 export { FancyBigNumber } from './charts/FancyBigNumber';
 export { LineChart } from './charts/LineChart';
+export { ScatterChart } from './charts/ScatterChart';

@@ -258,6 +258,17 @@ export function getChartArguments(chart: GlyphChart): Map<string, typeof Argumen
 }
 
 /**
+ * Format parameter name as a human-readable label.
+ */
+function formatParamLabel(paramName: string): string {
+    // Convert camelCase to Title Case with spaces
+    return paramName
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .trim();
+}
+
+/**
  * Generate Superset controlPanel from a Glyph chart.
  */
 function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
@@ -265,13 +276,40 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
     const queryControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
     const customizeControls: (string | { name: string; config: Record<string, unknown> })[][] = [];
     let hasTemporalArg = false;
+    const controlOverrides: Record<string, Record<string, unknown>> = {};
 
     for (const [paramName, argClass] of args) {
         const control = getControlForArgument(argClass);
 
-        if (control === 'metric' || control === 'groupby') {
-            // Data controls go in Query section
-            queryControls.push([control]);
+        if (control === 'metric') {
+            // Use standard metric control
+            queryControls.push(['metric']);
+        } else if (control === 'groupby') {
+            // For Dimension parameters, create a custom single-column selector
+            // Using 'entity' control type which is a single-column DnD-enabled selector
+            queryControls.push([{
+                name: paramName,
+                config: {
+                    type: 'SelectControl',
+                    label: formatParamLabel(paramName),
+                    description: argClass.description || `Select a column for ${formatParamLabel(paramName)}`,
+                    multi: false,
+                    freeForm: true,
+                    allowAll: true,
+                    commaChoosesOption: false,
+                    optionRenderer: (c: unknown) => c,
+                    valueRenderer: (c: unknown) => c,
+                    valueKey: 'column_name',
+                    mapStateToProps: (state: Record<string, unknown>) => {
+                        const datasource = state.datasource as SupersetDatasource | undefined;
+                        const columns = datasource?.columns || [];
+                        return {
+                            choices: columns.map((col: SupersetColumn) => [col.column_name, col.column_name]),
+                        };
+                    },
+                    validators: [],
+                },
+            }]);
         } else if (control === 'granularity_sqla') {
             // Temporal control - add x_axis and time_grain_sqla
             hasTemporalArg = true;
@@ -318,6 +356,7 @@ function generateControlPanel(chart: GlyphChart): ControlPanelConfig {
             metric: {
                 validators: [],
             },
+            ...controlOverrides,
         },
         // Allow empty queries so charts can render with drop zones before data is selected
         formDataOverrides: (formData: QueryFormData) => ({
@@ -379,15 +418,17 @@ function generateTransformProps(
             const control = getControlForArgument(argClass);
 
             if (control === 'metric') {
-                // Check both metric (singular) and metrics (plural/array) from formData
+                // Read from generic metric control
                 const metricValue = formData.metric || (formData.metrics && formData.metrics[0]);
                 const metricLabel = typeof metricValue === 'string'
                     ? metricValue
                     : metricValue?.label || 'value';
                 props[name] = new argClass(metricLabel);
             } else if (control === 'groupby') {
-                const groupby = formData.groupby || formData.columns || [];
-                props[name] = new argClass(groupby[0] || '');
+                // For Dimension parameters, read from the custom control by parameter name
+                // formData will have the column name stored under the parameter name
+                const columnValue = formData[name] as string | undefined;
+                props[name] = new argClass(columnValue || 'value');
             } else if (control === 'granularity_sqla') {
                 // Temporal control - get time column from xAxis/x_axis (modern) or granularity_sqla (legacy)
                 // Note: Superset converts snake_case to camelCase when passing formData to components
@@ -535,17 +576,34 @@ function hasTemporalArgument(chart: GlyphChart): boolean {
 }
 
 /**
- * Check if a chart has a Dimension (groupby) argument.
+ * Get parameter names that are Dimension type (for groupby).
  */
-function hasDimensionArgument(chart: GlyphChart): boolean {
+function getDimensionParamNames(chart: GlyphChart): string[] {
     const args = getChartArguments(chart);
-    for (const [, argClass] of args) {
+    const names: string[] = [];
+
+    for (const [paramName, argClass] of args) {
         const control = getControlForArgument(argClass);
         if (control === 'groupby') {
-            return true;
+            names.push(paramName);
         }
     }
-    return false;
+
+    return names;
+}
+
+/**
+ * Get the metric control name for a chart (either 'metric' or 'metrics').
+ */
+function getMetricControlName(chart: GlyphChart): string {
+    const args = getChartArguments(chart);
+    let metricCount = 0;
+
+    for (const [, argClass] of args) {
+        if (getControlForArgument(argClass) === 'metric') metricCount++;
+    }
+
+    return metricCount > 1 ? 'metrics' : 'metric';
 }
 
 /**
@@ -559,7 +617,8 @@ function generateBuildQuery(
 ): (formData: any) => any {
     const vizOnlyParams = getVisualizationOnlyParams(chart);
     const hasTemporal = hasTemporalArgument(chart);
-    const hasDimension = hasDimensionArgument(chart);
+    const dimensionParamNames = getDimensionParamNames(chart);
+    const metricControlName = getMetricControlName(chart);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (formData: any) => {
@@ -572,12 +631,33 @@ function generateBuildQuery(
             delete cleanedFormData[param];
         }
 
-        // Also filter metrics array if it contains non-metric values
+        // Ensure metrics are properly set
+        if (metricControlName === 'metric' && formData.metric) {
+            // Single metric - ensure it's in the metrics array for the query
+            cleanedFormData.metrics = [formData.metric];
+        }
+
+        // Filter metrics array if it contains non-metric values
         if (Array.isArray(cleanedFormData.metrics)) {
             cleanedFormData.metrics = cleanedFormData.metrics.filter(
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (m: any) => typeof m === 'string' || (typeof m === 'object' && m !== null && 'label' in m)
             );
+        }
+
+        // Collect dimension values from custom controls and add to columns/groupby
+        const dimensionColumns: string[] = [];
+        for (const paramName of dimensionParamNames) {
+            const columnValue = formData[paramName] as string | undefined;
+            if (columnValue) {
+                dimensionColumns.push(columnValue);
+            }
+        }
+
+        // Set groupby to include all dimension columns
+        if (dimensionColumns.length > 0) {
+            cleanedFormData.groupby = dimensionColumns;
+            cleanedFormData.columns = dimensionColumns;
         }
 
         return buildQueryContext(cleanedFormData, baseQueryObject => {
@@ -605,8 +685,8 @@ function generateBuildQuery(
                 query.columns = [xAxisColumn, ...existingColumns];
 
                 // For charts with both temporal and dimension, set up series_columns
-                if (hasDimension && formData.groupby && formData.groupby.length > 0) {
-                    query.series_columns = formData.groupby;
+                if (dimensionColumns.length > 0) {
+                    query.series_columns = dimensionColumns;
                 }
             }
 
