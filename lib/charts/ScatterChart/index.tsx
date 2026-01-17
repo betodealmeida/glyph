@@ -6,9 +6,93 @@ import { createChart, GlyphChart } from '../../createChart';
 import { DropZone, ACCEPT_TYPE_MAP, convertToDragItem } from '../../components/DropZone';
 
 /**
+ * Axis data - either numeric or categorical.
+ */
+interface AxisData {
+    isNumeric: boolean;
+    // For numeric axes
+    min?: number;
+    max?: number;
+    // For categorical axes
+    categories?: string[];
+    // Map from raw value to position (0 to 1)
+    scale: (value: unknown) => number;
+    // Get tick positions and labels
+    ticks: { position: number; label: string }[];
+}
+
+/**
+ * Analyze axis data and create scale/ticks.
+ */
+function analyzeAxisData(values: unknown[], padding: number = 0.1): AxisData {
+    // Check if all values are numeric
+    const numericValues = values.map(v => {
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string') {
+            const parsed = parseFloat(v);
+            return isNaN(parsed) ? null : parsed;
+        }
+        return null;
+    });
+
+    const allNumeric = numericValues.every(v => v !== null);
+
+    if (allNumeric && numericValues.length > 0) {
+        // Numeric axis
+        const nums = numericValues as number[];
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        const range = max - min || 1;
+        const paddedMin = min - range * padding;
+        const paddedMax = max + range * padding;
+        const paddedRange = paddedMax - paddedMin;
+
+        const ticks = generateTicks(paddedMin, paddedMax, 5).map(tick => ({
+            position: (tick - paddedMin) / paddedRange,
+            label: formatTickValue(tick),
+        }));
+
+        return {
+            isNumeric: true,
+            min: paddedMin,
+            max: paddedMax,
+            scale: (v: unknown) => {
+                const num = typeof v === 'number' ? v : parseFloat(String(v));
+                return (num - paddedMin) / paddedRange;
+            },
+            ticks,
+        };
+    } else {
+        // Categorical axis
+        const categories = [...new Set(values.map(v => String(v)))];
+        const categoryCount = categories.length;
+
+        // Position categories evenly with padding on edges
+        const step = 1 / (categoryCount + 1);
+
+        const ticks = categories.map((cat, i) => ({
+            position: (i + 1) * step,
+            label: cat,
+        }));
+
+        const categoryIndex = new Map(categories.map((cat, i) => [cat, i]));
+
+        return {
+            isNumeric: false,
+            categories,
+            scale: (v: unknown) => {
+                const idx = categoryIndex.get(String(v)) ?? 0;
+                return (idx + 1) * step;
+            },
+            ticks,
+        };
+    }
+}
+
+/**
  * Core render function for scatter chart.
  *
- * X and Y are dimensions (columns for positioning).
+ * X and Y are dimensions (columns for positioning) - can be numeric or categorical.
  * Metric is the aggregated value shown as bubble size.
  */
 function renderScatterChart(
@@ -24,7 +108,7 @@ function renderScatterChart(
     const currentTheme = theme || defaultTheme;
     const chartWidth = width || 600;
     const chartHeight = height || 400;
-    const padding = { top: 20, right: 20, bottom: 40, left: 50 };
+    const padding = { top: 20, right: 20, bottom: 60, left: 70 }; // More space for labels
 
     const xColumn = xAxis?.value;
     const yColumn = yAxis?.value;
@@ -41,46 +125,41 @@ function renderScatterChart(
         return null; // Let wrapper handle unconfigured state
     }
 
-    // Extract data points - x and y are dimension values, metric is the bubble size
-    const points = rows.map((row, i) => ({
-        x: Number(row[xColumn]) || 0,
-        y: Number(row[yColumn]) || 0,
-        size: metricColumn ? Number(row[metricColumn]) || 10 : 10,
-        index: i,
-    }));
+    // Extract raw values
+    const xValues = rows.map(row => row[xColumn]);
+    const yValues = rows.map(row => row[yColumn]);
+    const sizeValues = rows.map(row => Number(row[metricColumn]) || 1);
 
-    // Calculate scales
-    const xValues = points.map(p => p.x);
-    const yValues = points.map(p => p.y);
-    const sizeValues = points.map(p => p.size);
+    // Analyze axes
+    const xAxisData = analyzeAxisData(xValues);
+    const yAxisData = analyzeAxisData(yValues);
 
-    const xMin = Math.min(...xValues);
-    const xMax = Math.max(...xValues);
-    const yMin = Math.min(...yValues);
-    const yMax = Math.max(...yValues);
+    // Size scale
     const sizeMin = Math.min(...sizeValues);
     const sizeMax = Math.max(...sizeValues);
+    const scaleSize = (v: number) => {
+        if (sizeMax === sizeMin) return 10;
+        return 6 + ((v - sizeMin) / (sizeMax - sizeMin)) * 24;
+    };
 
-    // Add padding to ranges
-    const xRange = xMax - xMin || 1;
-    const yRange = yMax - yMin || 1;
-    const xPadded = { min: xMin - xRange * 0.05, max: xMax + xRange * 0.05 };
-    const yPadded = { min: yMin - yRange * 0.05, max: yMax + yRange * 0.05 };
-
-    // Scale functions
+    // Plot dimensions
     const plotWidth = chartWidth - padding.left - padding.right;
     const plotHeight = chartHeight - padding.top - padding.bottom;
 
-    const scaleX = (v: number) => padding.left + ((v - xPadded.min) / (xPadded.max - xPadded.min)) * plotWidth;
-    const scaleY = (v: number) => padding.top + plotHeight - ((v - yPadded.min) / (yPadded.max - yPadded.min)) * plotHeight;
-    const scaleSize = (v: number) => {
-        if (sizeMax === sizeMin) return 8;
-        return 4 + ((v - sizeMin) / (sizeMax - sizeMin)) * 20;
-    };
+    // Scale to pixel coordinates
+    const scaleX = (v: unknown) => padding.left + xAxisData.scale(v) * plotWidth;
+    const scaleY = (v: unknown) => padding.top + plotHeight - yAxisData.scale(v) * plotHeight;
 
-    // Generate axis ticks
-    const xTicks = generateTicks(xPadded.min, xPadded.max, 5);
-    const yTicks = generateTicks(yPadded.min, yPadded.max, 5);
+    // Extract data points
+    const points = rows.map((row, i) => ({
+        xRaw: row[xColumn],
+        yRaw: row[yColumn],
+        x: scaleX(row[xColumn]),
+        y: scaleY(row[yColumn]),
+        size: scaleSize(sizeValues[i] ?? 1),
+        sizeRaw: sizeValues[i] ?? 1,
+        index: i,
+    }));
 
     return (
         <svg
@@ -89,22 +168,22 @@ function renderScatterChart(
             style={{ fontFamily: currentTheme.fontFamily }}
         >
             {/* Grid lines */}
-            {yTicks.map((tick, i) => (
+            {yAxisData.ticks.map((tick, i) => (
                 <line
                     key={`grid-y-${i}`}
                     x1={padding.left}
                     x2={chartWidth - padding.right}
-                    y1={scaleY(tick)}
-                    y2={scaleY(tick)}
+                    y1={padding.top + plotHeight - tick.position * plotHeight}
+                    y2={padding.top + plotHeight - tick.position * plotHeight}
                     stroke={currentTheme.colors.gridLine}
                     strokeDasharray="2,2"
                 />
             ))}
-            {xTicks.map((tick, i) => (
+            {xAxisData.ticks.map((tick, i) => (
                 <line
                     key={`grid-x-${i}`}
-                    x1={scaleX(tick)}
-                    x2={scaleX(tick)}
+                    x1={padding.left + tick.position * plotWidth}
+                    x2={padding.left + tick.position * plotWidth}
                     y1={padding.top}
                     y2={chartHeight - padding.bottom}
                     stroke={currentTheme.colors.gridLine}
@@ -129,48 +208,56 @@ function renderScatterChart(
             />
 
             {/* X axis ticks and labels */}
-            {xTicks.map((tick, i) => (
-                <g key={`x-tick-${i}`}>
-                    <line
-                        x1={scaleX(tick)}
-                        x2={scaleX(tick)}
-                        y1={chartHeight - padding.bottom}
-                        y2={chartHeight - padding.bottom + 4}
-                        stroke={currentTheme.colors.border}
-                    />
-                    <text
-                        x={scaleX(tick)}
-                        y={chartHeight - padding.bottom + 16}
-                        textAnchor="middle"
-                        fontSize="10"
-                        fill={currentTheme.colors.text}
-                    >
-                        {formatTickValue(tick)}
-                    </text>
-                </g>
-            ))}
+            {xAxisData.ticks.map((tick, i) => {
+                const xPos = padding.left + tick.position * plotWidth;
+                const isCategorical = !xAxisData.isNumeric;
+                return (
+                    <g key={`x-tick-${i}`}>
+                        <line
+                            x1={xPos}
+                            x2={xPos}
+                            y1={chartHeight - padding.bottom}
+                            y2={chartHeight - padding.bottom + 4}
+                            stroke={currentTheme.colors.border}
+                        />
+                        <text
+                            x={xPos}
+                            y={chartHeight - padding.bottom + 16}
+                            textAnchor={isCategorical ? 'end' : 'middle'}
+                            fontSize="10"
+                            fill={currentTheme.colors.text}
+                            transform={isCategorical ? `rotate(-45, ${xPos}, ${chartHeight - padding.bottom + 16})` : undefined}
+                        >
+                            {tick.label.length > 12 ? tick.label.slice(0, 12) + '…' : tick.label}
+                        </text>
+                    </g>
+                );
+            })}
 
             {/* Y axis ticks and labels */}
-            {yTicks.map((tick, i) => (
-                <g key={`y-tick-${i}`}>
-                    <line
-                        x1={padding.left - 4}
-                        x2={padding.left}
-                        y1={scaleY(tick)}
-                        y2={scaleY(tick)}
-                        stroke={currentTheme.colors.border}
-                    />
-                    <text
-                        x={padding.left - 8}
-                        y={scaleY(tick) + 3}
-                        textAnchor="end"
-                        fontSize="10"
-                        fill={currentTheme.colors.text}
-                    >
-                        {formatTickValue(tick)}
-                    </text>
-                </g>
-            ))}
+            {yAxisData.ticks.map((tick, i) => {
+                const yPos = padding.top + plotHeight - tick.position * plotHeight;
+                return (
+                    <g key={`y-tick-${i}`}>
+                        <line
+                            x1={padding.left - 4}
+                            x2={padding.left}
+                            y1={yPos}
+                            y2={yPos}
+                            stroke={currentTheme.colors.border}
+                        />
+                        <text
+                            x={padding.left - 8}
+                            y={yPos + 3}
+                            textAnchor="end"
+                            fontSize="10"
+                            fill={currentTheme.colors.text}
+                        >
+                            {tick.label.length > 10 ? tick.label.slice(0, 10) + '…' : tick.label}
+                        </text>
+                    </g>
+                );
+            })}
 
             {/* Axis labels */}
             <text
@@ -197,15 +284,15 @@ function renderScatterChart(
             {points.map((point, i) => (
                 <circle
                     key={i}
-                    cx={scaleX(point.x)}
-                    cy={scaleY(point.y)}
-                    r={scaleSize(point.size)}
+                    cx={point.x}
+                    cy={point.y}
+                    r={point.size}
                     fill={palette?.getColor(i) || '#1f77b4'}
                     fillOpacity={0.7}
                     stroke={palette?.getColor(i) || '#1f77b4'}
                     strokeWidth={1}
                 >
-                    <title>{`${xColumn}: ${point.x}\n${yColumn}: ${point.y}\n${metricColumn}: ${point.size}`}</title>
+                    <title>{`${xColumn}: ${point.xRaw}\n${yColumn}: ${point.yRaw}\n${metricColumn}: ${point.sizeRaw}`}</title>
                 </circle>
             ))}
         </svg>
